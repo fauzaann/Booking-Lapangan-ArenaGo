@@ -27,6 +27,10 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 	return &userRepository{db: db}
 }
 
+func NewRepository(db *gorm.DB) UserRepository {
+	return NewUserRepository(db)
+}
+
 // CreateUser membuat pengguna baru dalam database
 func (r *userRepository) CreateUser(ctx context.Context, user *models.User) error {
 	return r.db.WithContext(ctx).Create(user).Error

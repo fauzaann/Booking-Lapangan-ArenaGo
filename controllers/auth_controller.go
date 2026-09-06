@@ -66,6 +66,10 @@ func (c *AuthController) Profile(ctx context.Context, userID uint) (*models.User
 	return user, nil
 }
 
+func (c *AuthController) GetProfile(ctx context.Context, userID uint) (*models.User, error) {
+	return c.Profile(ctx, userID)
+}
+
 func (c *AuthController) Logout(ctx context.Context) error {
 	return nil
 }

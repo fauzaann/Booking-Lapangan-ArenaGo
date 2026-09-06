@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 // AppError is a simple application error.
 type AppError struct {
 	Code    int
@@ -45,8 +47,8 @@ type User struct {
 	Role      role   `gorm:"type:varchar(50);not null;default:'USER'" json:"role"`
 	Phone     string `gorm:"type:varchar(20)" json:"phone"`
 	Email     string `gorm:"type:varchar(100);unique" json:"email"`
-	CreatedAt string `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt string `gorm:"autoUpdateTime" json:"updated_at"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
 	Bookings []Booking `gorm:"foreignKey:UserID" json:"bookings"`
 }
