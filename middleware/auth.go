@@ -5,6 +5,7 @@ import (
 
 	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/repository"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -58,5 +59,3 @@ func MustActor(c *gin.Context) controllers.Actor {
 	actor, _ := ActorFrom(c)
 	return actor
 }
-
-

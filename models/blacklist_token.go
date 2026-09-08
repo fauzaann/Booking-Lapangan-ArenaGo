@@ -2,6 +2,7 @@ package models
 
 import "time"
 
+// BlacklistToken struct mewakili token yang diblacklist dalam sistem
 type BlacklistToken struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Token     string    `gorm:"column:token;not null" json:"token"`
