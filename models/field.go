@@ -19,8 +19,9 @@ type Field struct {
 	Name        string      `gorm:"column:name;not null" json:"name"`
 	Location    string      `gorm:"column:location;not null" json:"location"`
 	Description string      `gorm:"column:description" json:"description"`
+	Type        FieldType   `gorm:"column:type;not null" json:"type"`
 	Price       int         `gorm:"column:price;not null" json:"price"`
-	Fasilities  string      `gorm:"column:facilities" json:"facilities"`
+	Facilities  string      `gorm:"column:facilities" json:"facilities"`
 	CreatedAt   time.Time   `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time   `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 	DeletedAt   *time.Time  `gorm:"column:deleted_at" json:"deleted_at,omitempty"`

@@ -6,8 +6,6 @@ import (
 	"reflect"
 
 	govalidator "github.com/go-playground/validator/v10"
-
-	"Booking-Lapangan/utils/timeutil"
 )
 
 // Validator adalah struct yang digunakan untuk memvalidasi input.
@@ -22,16 +20,16 @@ func NewValidator() *Validator {
 		return fld.Tag.Get("json")
 	})
 
-	_ = v.validator.RegisterValidation("clock", validateClock)
-	_ = v.validator.RegisterValidation("dateonly", validateDateOnly)
-	_ = v.validator.RegisterValidation("notpast", validateNotPastTime)
+	_ = v.RegisterValidation("clock", validateClock)
+	_ = v.RegisterValidation("dateonly", validateDateOnly)
+	_ = v.RegisterValidation("notpast", validateNotPastTime)
 
-	return &Validator{v}
+	return &Validator{validator: v}
 }
 
 // Validate mengembalikan nil jika payload valid, atau map error per field.
 func (v *Validator) Validate(payload interface{}) map[string]string {
-	if err := v.validate.Struct(payload); err != nil {
+	if err := v.validator.Struct(payload); err != nil {
 		var fieldErrors govalidator.ValidationErrors
 		if !errors.As(err, &fieldErrors) {
 			return map[string]string{"_error": err.Error()}
@@ -48,7 +46,7 @@ func (v *Validator) Validate(payload interface{}) map[string]string {
 // validateClock memastikan waktu berformat HH:MM
 func validateClock(fl govalidator.FieldLevel) bool {
 	value := fl.Field().String()
-	return timeutil.ValidClock(value)
+	return ValidClock(value)
 }
 
 // validateDateOnly memastikan tanggal berformat YYYY-MM-DD
@@ -57,15 +55,15 @@ func validateDateOnly(fl govalidator.FieldLevel) bool {
 	if value == "" {
 		return true
 	}
-	_, err := timeutil.ParseDate(value)
+	_, err := ParseDate(value)
 	return err == nil
 }
 
 // validateNotPastTime memastikan tanggal tidak lebih lama dari hari ini
 func validateNotPastTime(fl govalidator.FieldLevel) bool {
-	now := timeutil.Today()
+	now := Today()
 	value := fl.Field().String()
-	date, err := timeutil.ParseDate(value)
+	date, err := ParseDate(value)
 	if err != nil {
 		return false
 	}
