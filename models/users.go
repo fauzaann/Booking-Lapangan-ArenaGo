@@ -17,16 +17,16 @@ func (e *AppError) Error() string {
 }
 
 // role dalam sistem
-type role string
+type Role string
 
 // Konstanta untuk role pengguna
 const (
-	RoleAdmin role = "ADMIN"
-	RoleUser  role = "USER"
+	RoleAdmin Role = "ADMIN"
+	RoleUser  Role = "USER"
 )
 
 // IsValid memeriksa apakah role valid
-func (r role) IsValid() bool {
+func (r Role) IsValid() bool {
 	switch r {
 	case RoleAdmin, RoleUser:
 		return true
@@ -35,18 +35,12 @@ func (r role) IsValid() bool {
 	}
 }
 
-// Booking struct mewakili entitas pemesanan dalam sistem
-type Booking struct {
-	ID     uint `gorm:"primaryKey" json:"id"`
-	UserID uint `gorm:"index" json:"user_id"`
-}
-
 // User struct mewakili entitas pengguna dalam sistem
 type User struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Username  string    `gorm:"type:varchar(100);not null" json:"username"`
 	Password  string    `gorm:"type:varchar(255);not null;unique" json:"password"`
-	Role      role      `gorm:"type:varchar(50);not null;default:'USER'" json:"role"`
+	Role      Role      `gorm:"type:varchar(50);not null;default:'USER'" json:"role"`
 	Phone     string    `gorm:"type:varchar(20)" json:"phone"`
 	Email     string    `gorm:"type:varchar(100);unique" json:"email"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`

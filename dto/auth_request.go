@@ -1,8 +1,9 @@
 package dto
 
-import "time"
-
-
+import (
+	"Booking-Lapangan/models"
+	"time"
+)
 
 type RegisterRequest struct {
 	Username string `json:"username" validate:"required"`
@@ -17,37 +18,37 @@ type LoginRequest struct {
 }
 
 type UserResponse struct {
-	ID       uint   `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Phone    string `json:"phone"`
-	Role     string `json:"role"`
+	ID        uint      `json:"id"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Phone     string    `json:"phone"`
+	Role      string    `json:"role"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type AuthResponse struct {
-	Token string       `json:"token"`
-	ExpiresAt time.Time  `json:"expires_at"`
-	User  UserResponse `json:"user"`
+	Token     string       `json:"token"`
+	ExpiresAt time.Time    `json:"expires_at"`
+	User      UserResponse `json:"user"`
 }
 
 // NewUserResponse memetakan model user menjadi response.
-func NewUserResponse(user *UserResponse) UserResponse {
+func NewUserResponse(user models.User) UserResponse {
 	return UserResponse{
-		ID:       user.ID,
-		Username: user.Username,
-		Email:    user.Email,
-		Phone:    user.Phone,
-		Role:     string(user.Role),
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		Phone:     user.Phone,
+		Role:      string(user.Role),
 		CreatedAt: user.CreatedAt,
 	}
 }
 
 // NewUserResponses memetakan daftar user menjadi daftar response.
-func NewUserResponses(users []UserResponse) []UserResponse {
+func NewUserResponses(users []models.User) []UserResponse {
 	responses := make([]UserResponse, len(users))
 	for i, user := range users {
-		responses[i] = NewUserResponse(&user)
+		responses[i] = NewUserResponse(user)
 	}
 	return responses
 }

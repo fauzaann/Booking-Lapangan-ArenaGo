@@ -21,7 +21,7 @@ func NewScheduleHandler(fields controllers.FieldController, validate *utils.Vali
 
 // List menangani GET /api/v1/fields/:id/schedules.
 func (h *ScheduleHandler) List(c *gin.Context) {
-	fieldID, ok := uintParam(c, "id")
+	fieldID, ok := UintParam(c, "id")
 	if !ok {
 		return
 	}
@@ -36,13 +36,13 @@ func (h *ScheduleHandler) List(c *gin.Context) {
 
 // Upsert menangani PUT /api/v1/admin/fields/:id/schedules.
 func (h *ScheduleHandler) Upsert(c *gin.Context) {
-	fieldID, ok := uintParam(c, "id")
+	fieldID, ok := UintParam(c, "id")
 	if !ok {
 		return
 	}
 
 	var req dto.UpsertScheduleRequest
-	if !h.bindJSON(c, &req) {
+	if !h.BindJSON(c, &req) {
 		return
 	}
 

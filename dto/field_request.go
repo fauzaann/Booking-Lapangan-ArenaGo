@@ -11,8 +11,8 @@ type CreateFieldRequest struct {
 	Location    string            `json:"location" binding:"required"`
 	Description string            `json:"description"`
 	Type        string            `json:"type" binding:"required"`
-	Price       int               `json:"price" binding:"required"`
-	Facilities  string            `json:"facilities" validate:"omitempty,dive,max=50"`
+	Price       float64           `json:"price" binding:"required"`
+	Facilities  []string          `json:"facilities" validate:"omitempty,dive,max=50"`
 	Status      string            `json:"status" binding:"required"`
 	Schedules   []ScheduleRequest `json:"schedules" binding:"omitempty"`
 }
@@ -23,7 +23,7 @@ type UpdateFieldRequest struct {
 	Location    *string   `json:"location" binding:"omitempty"`
 	Description *string   `json:"description" binding:"omitempty"`
 	Type        *string   `json:"type" binding:"omitempty"`
-	Price       *int      `json:"price" binding:"omitempty"`
+	Price       *float64  `json:"price" binding:"omitempty"`
 	Facilities  *[]string `json:"facilities" binding:"omitempty"`
 	Status      *string   `json:"status" binding:"omitempty,oneof=ACTIVE INACTIVE MAINTENANCE"`
 }
@@ -73,7 +73,7 @@ type FieldResponse struct {
 	Name        string             `json:"name"`
 	Location    string             `json:"location"`
 	Description string             `json:"description"`
-	Price       int                `json:"price"`
+	Price       float64            `json:"price"`
 	Facilities  []string           `json:"facilities"`
 	Status      string             `json:"status"`
 	Schedule    []ScheduleResponse `json:"schedule"`
@@ -81,11 +81,11 @@ type FieldResponse struct {
 
 // SlotResponse untuk payload menampilkan slot satu jam
 type SlotResponse struct {
-	StartTime   string `json:"start_time"`
-	EndTime     string `json:"end_time"`
-	Price       int    `json:"price"`
-	IsAvailable bool   `json:"is_available"`
-	Reason      string `json:"reason,omitempty"`
+	StartTime   string  `json:"start_time"`
+	EndTime     string  `json:"end_time"`
+	Price       float64 `json:"price"`
+	IsAvailable bool    `json:"is_available"`
+	Reason      string  `json:"reason,omitempty"`
 }
 
 // AvailableResponse untuk payload menampilkan lapangan yang tersedia pada satu tanggal
@@ -94,7 +94,7 @@ type AvailableResponse struct {
 	FieldName string         `json:"field_name"`
 	Date      string         `json:"date"`
 	Day       string         `json:"day"`
-	Price     int            `json:"price"`
+	Price     float64        `json:"price"`
 	IsOpen    bool           `json:"is_open"`
 	OpenTime  string         `json:"open_time,omitempty"`
 	CloseTime string         `json:"close_time,omitempty"`

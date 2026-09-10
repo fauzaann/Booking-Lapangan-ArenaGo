@@ -13,6 +13,8 @@ type Registry interface {
 	User() UserRepository
 	Field() FieldRepository
 	Schedule() ScheduleRepository
+	Booking() BookingRepository
+	Payment() PaymentRepository
 }
 
 // UnitOfWork adalah Registry yang mampu menjalankan beberapa operasi
@@ -34,6 +36,8 @@ func NewUnitOfWork(db *gorm.DB) UnitOfWork {
 func (r *registry) User() UserRepository         { return NewUserRepository(r.db) }
 func (r *registry) Field() FieldRepository       { return NewFieldRepository(r.db) }
 func (r *registry) Schedule() ScheduleRepository { return NewScheduleRepository(r.db) }
+func (r *registry) Booking() BookingRepository   { return NewBookingRepository(r.db) }
+func (r *registry) Payment() PaymentRepository   { return NewPaymentRepository(r.db) }
 
 // Atomic menjalankan fn di dalam satu transaksi. Jika fn mengembalikan error,
 // transaksi otomatis di-rollback; jika nil, transaksi di-commit.

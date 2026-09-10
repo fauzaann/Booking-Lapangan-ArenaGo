@@ -15,6 +15,7 @@ var timeNow = time.Now
 type Actor struct {
 	ID       uint
 	Username string
+	Email    string
 	Role     string
 }
 
