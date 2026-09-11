@@ -9,8 +9,10 @@ import (
 
 	"Booking-Lapangan/dto"
 	"Booking-Lapangan/models"
+	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/timeutil"
+	"Booking-Lapangan/pkg/xendit"
 	"Booking-Lapangan/repository"
-	"Booking-Lapangan/utils"
 )
 
 // BookingPolicy adalah aturan bisnis booking yang berasal dari konfigurasi.
@@ -34,12 +36,12 @@ type BookingController interface {
 
 type bookingController struct {
 	uow      repository.UnitOfWork
-	invoices utils.InvoiceService
+	invoices xendit.InvoiceService
 	policy   BookingPolicy
 }
 
 // NewBookingController membuat BookingController.
-func NewBookingController(uow repository.UnitOfWork, invoices utils.InvoiceService, policy BookingPolicy) BookingController {
+func NewBookingController(uow repository.UnitOfWork, invoices xendit.InvoiceService, policy BookingPolicy) BookingController {
 	if policy.MinHours < 1 {
 		policy.MinHours = 1
 	}
@@ -60,59 +62,59 @@ func NewBookingController(uow repository.UnitOfWork, invoices utils.InvoiceServi
 // database tidak tertahan selama request HTTP eksternal berlangsung. Konsistensi
 // tetap terjaga: jika invoice gagal dibuat, booking dibatalkan otomatis.
 func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.CreateBookingRequest) (*dto.BookingCreatedResponse, error) {
-	bookingDate, err := utils.ParseDate(req.BookingDate)
+	bookingDate, err := timeutil.ParseDate(req.BookingDate)
 	if err != nil {
-		return nil, utils.BadRequest(err.Error())
+		return nil, apperror.BadRequest(err.Error())
 	}
-	if bookingDate.Before(utils.NormalizeDate(timeNow())) {
-		return nil, utils.Unprocessable("booking_date must not be in the past")
+	if bookingDate.Before(timeutil.NormalizeDate(timeNow())) {
+		return nil, apperror.Unprocessable("booking_date must not be in the past")
 	}
 
-	duration, err := utils.DurationHours(req.StartTime, req.EndTime)
+	duration, err := timeutil.DurationHours(req.StartTime, req.EndTime)
 	if err != nil {
-		return nil, utils.Unprocessable(err.Error())
+		return nil, apperror.Unprocessable(err.Error())
 	}
 	if duration < c.policy.MinHours {
-		return nil, utils.Unprocessable(fmt.Sprintf("minimum booking duration is %d hour(s)", c.policy.MinHours))
+		return nil, apperror.Unprocessable(fmt.Sprintf("minimum booking duration is %d hour(s)", c.policy.MinHours))
 	}
 	if duration > c.policy.MaxHours {
-		return nil, utils.Unprocessable(fmt.Sprintf("maximum booking duration is %d hour(s)", c.policy.MaxHours))
+		return nil, apperror.Unprocessable(fmt.Sprintf("maximum booking duration is %d hour(s)", c.policy.MaxHours))
 	}
 
 	field, err := c.uow.Field().FindByID(ctx, req.FieldID)
 	if err != nil {
 		return nil, err
 	}
-	if !field.IsValid() {
-		return nil, utils.Unprocessable("field is not available for booking")
+	if !field.IsActive() {
+		return nil, apperror.Unprocessable("field is not available for booking")
 	}
 
 	day := models.DayFromWeekday(bookingDate.Weekday())
 	schedule, err := c.uow.Schedule().FindByFieldAndDay(ctx, field.ID, day)
 	if err != nil {
-		if utils.IsNotFound(err) {
-			return nil, utils.Unprocessable("field has no operating hours on " + string(day))
+		if apperror.IsNotFound(err) {
+			return nil, apperror.Unprocessable("field has no operating hours on " + string(day))
 		}
 		return nil, err
 	}
-	if schedule.IsActive {
-		return nil, utils.Unprocessable("field is closed on " + string(day))
+	if schedule.IsClosed {
+		return nil, apperror.Unprocessable("field is closed on " + string(day))
 	}
-	if !utils.Within(req.StartTime, req.EndTime, schedule.OpenTime, schedule.CloseTime) {
-		return nil, utils.Unprocessable(fmt.Sprintf(
+	if !timeutil.Within(req.StartTime, req.EndTime, schedule.OpenTime, schedule.CloseTime) {
+		return nil, apperror.Unprocessable(fmt.Sprintf(
 			"booking time must be within operating hours %s-%s", schedule.OpenTime, schedule.CloseTime))
 	}
 
-	startAt, err := utils.CombineDateTime(bookingDate, req.StartTime)
+	startAt, err := timeutil.CombineDateTime(bookingDate, req.StartTime)
 	if err != nil {
-		return nil, utils.BadRequest(err.Error())
+		return nil, apperror.BadRequest(err.Error())
 	}
 	if !startAt.After(timeNow()) {
-		return nil, utils.Unprocessable("start_time has already passed")
+		return nil, apperror.Unprocessable("start_time has already passed")
 	}
 
 	// Total harga SELALU dihitung backend, tidak pernah diterima dari client.
-	totalPrice := field.Price * float64(duration)
+	totalPrice := field.PricePerHour * float64(duration)
 
 	var (
 		booking *models.Booking
@@ -131,7 +133,7 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 			return checkErr
 		}
 		if overlap {
-			return utils.Conflict("selected time slot is not available")
+			return apperror.Conflict("selected time slot is not available")
 		}
 
 		sequence, seqErr := r.Booking().NextSequence(ctx, timeNow())
@@ -141,7 +143,7 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 
 		booking = &models.Booking{
 			BookingCode: BuildBookingCode(timeNow(), sequence),
-			UserID:      actor.ID,
+			UserID:      actor.UserID,
 			FieldID:     field.ID,
 			BookingDate: bookingDate,
 			StartTime:   req.StartTime,
@@ -150,7 +152,7 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 			TotalPrice:  totalPrice,
 			Status:      models.BookingStatusPending,
 			Notes:       strings.TrimSpace(req.Notes),
-			Items:       buildBookingItems(req.StartTime, req.EndTime, field.Price),
+			Items:       buildBookingItems(req.StartTime, req.EndTime, field.PricePerHour),
 		}
 		if createErr := r.Booking().Create(ctx, booking); createErr != nil {
 			return createErr
@@ -168,17 +170,17 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 		return nil, err
 	}
 
-	invoice, err := c.invoices.CreateInvoice(ctx, utils.CreateInvoiceRequest{
+	invoice, err := c.invoices.CreateInvoice(ctx, xendit.CreateInvoiceRequest{
 		ExternalID:      booking.BookingCode,
 		Amount:          totalPrice,
 		Description:     fmt.Sprintf("Booking %s - %s (%s %s-%s)", booking.BookingCode, field.Name, req.BookingDate, req.StartTime, req.EndTime),
 		InvoiceDuration: c.policy.InvoiceDuration,
 		PayerEmail:      actor.Email,
-		Customer:        &utils.Customer{Email: actor.Email},
-		Items: []utils.Item{{
+		Customer:        &xendit.Customer{Email: actor.Email},
+		Items: []xendit.Item{{
 			Name:     fmt.Sprintf("%s (%d hour)", field.Name, duration),
 			Quantity: duration,
-			Price:    field.Price,
+			Price:    field.PricePerHour,
 			Category: string(field.Type),
 		}},
 		SuccessRedirectURL: c.policy.SuccessRedirectURL,
@@ -186,7 +188,7 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 	})
 	if err != nil {
 		c.rollbackBooking(ctx, booking, payment)
-		return nil, utils.BadGateway("failed to create payment invoice", err)
+		return nil, apperror.BadGateway("failed to create payment invoice", err)
 	}
 
 	expiredAt := invoice.ExpiryDate
@@ -213,7 +215,7 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 		BookingID:     booking.ID,
 		BookingCode:   booking.BookingCode,
 		FieldName:     field.Name,
-		BookingDate:   booking.BookingDate.Format(utils.DateLayout),
+		BookingDate:   booking.BookingDate.Format(timeutil.DateLayout),
 		StartTime:     booking.StartTime,
 		EndTime:       booking.EndTime,
 		Duration:      booking.Duration,
@@ -238,21 +240,21 @@ func (c *bookingController) List(ctx context.Context, actor Actor, query dto.Boo
 	if actor.IsAdmin() {
 		filter.UserID = query.UserID
 	} else {
-		userID := actor.ID
+		userID := actor.UserID
 		filter.UserID = &userID
 	}
 
 	if query.From != "" {
-		from, err := utils.ParseDate(query.From)
+		from, err := timeutil.ParseDate(query.From)
 		if err != nil {
-			return nil, 0, utils.BadRequest("from must use YYYY-MM-DD format")
+			return nil, 0, apperror.BadRequest("from must use YYYY-MM-DD format")
 		}
 		filter.DateFrom = &from
 	}
 	if query.To != "" {
-		to, err := utils.ParseDate(query.To)
+		to, err := timeutil.ParseDate(query.To)
 		if err != nil {
-			return nil, 0, utils.BadRequest("to must use YYYY-MM-DD format")
+			return nil, 0, apperror.BadRequest("to must use YYYY-MM-DD format")
 		}
 		filter.DateTo = &to
 	}
@@ -289,20 +291,20 @@ func (c *bookingController) Cancel(ctx context.Context, actor Actor, id uint) (*
 
 	switch booking.Status {
 	case models.BookingStatusCancelled:
-		return nil, utils.Conflict("booking is already cancelled")
+		return nil, apperror.Conflict("booking is already cancelled")
 	case models.BookingStatusCompleted, models.BookingStatusExpired:
-		return nil, utils.Conflict("booking can no longer be cancelled")
+		return nil, apperror.Conflict("booking can no longer be cancelled")
 	}
 
 	isPaid := booking.Status == models.BookingStatusPaid || booking.Status == models.BookingStatusConfirmed
 	if isPaid && !actor.IsAdmin() {
-		startAt, convErr := utils.CombineDateTime(booking.BookingDate, booking.StartTime)
+		startAt, convErr := timeutil.CombineDateTime(booking.BookingDate, booking.StartTime)
 		if convErr != nil {
-			return nil, utils.Internal("failed to read booking schedule", convErr)
+			return nil, apperror.Internal("failed to read booking schedule", convErr)
 		}
 		limit := time.Duration(c.policy.CancelMinHours) * time.Hour
 		if startAt.Sub(timeNow()) < limit {
-			return nil, utils.Unprocessable(fmt.Sprintf(
+			return nil, apperror.Unprocessable(fmt.Sprintf(
 				"paid booking can only be cancelled at least %d hour(s) before start time", c.policy.CancelMinHours))
 		}
 	}
@@ -317,7 +319,7 @@ func (c *bookingController) Cancel(ctx context.Context, actor Actor, id uint) (*
 
 		payment, findErr := r.Payment().FindByBookingID(ctx, booking.ID)
 		if findErr != nil {
-			if utils.IsNotFound(findErr) {
+			if apperror.IsNotFound(findErr) {
 				return nil
 			}
 			return findErr
@@ -337,7 +339,7 @@ func (c *bookingController) Cancel(ctx context.Context, actor Actor, id uint) (*
 
 func (c *bookingController) UpdateStatus(ctx context.Context, id uint, status models.BookingStatus) (*dto.BookingResponse, error) {
 	if !status.Valid() {
-		return nil, utils.Unprocessable("invalid booking status")
+		return nil, apperror.Unprocessable("invalid booking status")
 	}
 
 	booking, err := c.uow.Booking().FindByID(ctx, id)
@@ -345,7 +347,7 @@ func (c *bookingController) UpdateStatus(ctx context.Context, id uint, status mo
 		return nil, err
 	}
 	if booking.Status == status {
-		return c.Detail(ctx, Actor{Role: string(models.RoleAdmin)}, id)
+		return c.Detail(ctx, Actor{Role: models.RoleAdmin}, id)
 	}
 
 	booking.Status = status
@@ -356,7 +358,7 @@ func (c *bookingController) UpdateStatus(ctx context.Context, id uint, status mo
 	if err := c.uow.Booking().Update(ctx, booking); err != nil {
 		return nil, err
 	}
-	return c.Detail(ctx, Actor{Role: string(models.RoleAdmin)}, id)
+	return c.Detail(ctx, Actor{Role: models.RoleAdmin}, id)
 }
 
 // rollbackBooking membatalkan booking ketika pembuatan invoice gagal, sehingga
@@ -381,11 +383,11 @@ func (c *bookingController) rollbackBooking(ctx context.Context, booking *models
 }
 
 func ensureBookingOwner(actor Actor, booking *models.Booking) error {
-	if actor.IsAdmin() || booking.UserID == actor.ID {
+	if actor.IsAdmin() || booking.UserID == actor.UserID {
 		return nil
 	}
 	// 404 dipilih agar keberadaan booking milik orang lain tidak bocor.
-	return utils.NotFound("booking not found")
+	return apperror.NotFound("booking not found")
 }
 
 // BuildBookingCode menyusun kode booking unik berformat BK-YYYYMMDD-XXXX.
@@ -394,7 +396,7 @@ func BuildBookingCode(now time.Time, sequence int) string {
 }
 
 func buildBookingItems(start, end string, pricePerHour float64) []models.BookingItem {
-	slots := utils.HourlySlots(start, end)
+	slots := timeutil.HourlySlots(start, end)
 	items := make([]models.BookingItem, 0, len(slots))
 	for _, slot := range slots {
 		items = append(items, models.BookingItem{

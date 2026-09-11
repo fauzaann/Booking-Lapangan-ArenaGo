@@ -1,170 +1,174 @@
 package dto
 
 import (
-	"Booking-Lapangan/models"
 	"strings"
+
+	"Booking-Lapangan/models"
 )
 
-// CreateFieldRequest untuk payload pembuatan lapangan(admin)
+// CreateFieldRequest adalah payload pembuatan lapangan (admin).
 type CreateFieldRequest struct {
-	Name        string            `json:"name" binding:"required"`
-	Location    string            `json:"location" binding:"required"`
-	Description string            `json:"description"`
-	Type        string            `json:"type" binding:"required"`
-	Price       float64           `json:"price" binding:"required"`
-	Facilities  []string          `json:"facilities" validate:"omitempty,dive,max=50"`
-	Status      string            `json:"status" binding:"required"`
-	Schedules   []ScheduleRequest `json:"schedules" binding:"omitempty"`
+	Name         string            `json:"name" validate:"required,min=3,max=120"`
+	Description  string            `json:"description" validate:"max=1000"`
+	Type         string            `json:"type" validate:"required,oneof=FUTSAL BADMINTON BASKET TENNIS MINI_SOCCER"`
+	Location     string            `json:"location" validate:"required,min=3,max=200"`
+	PricePerHour float64           `json:"price_per_hour" validate:"required,gt=0"`
+	Status       string            `json:"status" validate:"omitempty,oneof=ACTIVE INACTIVE MAINTENANCE"`
+	Facilities   []string          `json:"facilities" validate:"omitempty,dive,max=50"`
+	Schedules    []ScheduleRequest `json:"schedules" validate:"omitempty,dive"`
 }
 
-// UpdateFieldRequest untuk payload update lapangan(admin)
+// UpdateFieldRequest adalah payload perubahan lapangan (admin).
+// Field bertipe pointer agar perubahan parsial dapat dibedakan dari nilai kosong.
 type UpdateFieldRequest struct {
-	Name        *string   `json:"name" binding:"omitempty"`
-	Location    *string   `json:"location" binding:"omitempty"`
-	Description *string   `json:"description" binding:"omitempty"`
-	Type        *string   `json:"type" binding:"omitempty"`
-	Price       *float64  `json:"price" binding:"omitempty"`
-	Facilities  *[]string `json:"facilities" binding:"omitempty"`
-	Status      *string   `json:"status" binding:"omitempty,oneof=ACTIVE INACTIVE MAINTENANCE"`
+	Name         *string   `json:"name" validate:"omitempty,min=3,max=120"`
+	Description  *string   `json:"description" validate:"omitempty,max=1000"`
+	Type         *string   `json:"type" validate:"omitempty,oneof=FUTSAL BADMINTON BASKET TENNIS MINI_SOCCER"`
+	Location     *string   `json:"location" validate:"omitempty,min=3,max=200"`
+	PricePerHour *float64  `json:"price_per_hour" validate:"omitempty,gt=0"`
+	Status       *string   `json:"status" validate:"omitempty,oneof=ACTIVE INACTIVE MAINTENANCE"`
+	Facilities   *[]string `json:"facilities" validate:"omitempty,dive,max=50"`
 }
 
-// FieldFilter untuk payload pencarian lapangan(user/admin)
-type FieldFilter struct {
+// FieldFilterQuery adalah query string pencarian lapangan.
+type FieldFilterQuery struct {
 	PaginationQuery
-	Type     string   `form:"type" binding:"omitempty"`
-	Status   string   `form:"status" binding:"omitempty"`
-	Location string   `form:"location" binding:"omitempty"`
-	Search   string   `form:"search" binding:"omitempty"`
-	PriceMax *float64 `form:"price_max" binding:"omitempty"`
-	PriceMin *float64 `form:"price_min" binding:"omitempty"`
+	Type     string   `form:"type"`
+	Status   string   `form:"status"`
+	Location string   `form:"location"`
+	Search   string   `form:"search"`
+	MinPrice *float64 `form:"min_price"`
+	MaxPrice *float64 `form:"max_price"`
 }
 
-// ScheduleRequest untuk payload pembuatan jadwal
+// ScheduleRequest adalah payload jam operasional per hari.
 type ScheduleRequest struct {
-	Day       string `json:"day" binding:"required,oneof=senin selasa rabu kamis jumat sabtu minggu monday tuesday wednesday thursday friday saturday sunday"`
-	OpenTime  string `json:"open_time" binding:"required"`
-	CloseTime string `json:"close_time" binding:"required"`
+	Day       string `json:"day" validate:"required,oneof=MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY"`
+	OpenTime  string `json:"open_time" validate:"required,clock"`
+	CloseTime string `json:"close_time" validate:"required,clock"`
 	IsClosed  bool   `json:"is_closed"`
 }
 
-// UpsertScheduleRequest untuk payload upsert jadwal
+// UpsertScheduleRequest adalah payload pengaturan jadwal sebuah lapangan.
 type UpsertScheduleRequest struct {
-	Schedules []ScheduleRequest `json:"schedules"`
+	Schedules []ScheduleRequest `json:"schedules" validate:"required,min=1,dive"`
 }
 
-// UpdateScheduleRequest untuk payload update jadwal
-type UpdateScheduleRequest struct {
-	ScheduleRequest []*ScheduleRequest `json:"schedule" binding:"omitempty"`
-}
-
-// ScheduleResponse untuk payload menampilkan jadwal
+// ScheduleResponse adalah representasi jadwal untuk client.
 type ScheduleResponse struct {
-	ID        int    `json:"id"`
-	FieldID   int    `json:"field_id"`
+	ID        uint   `json:"id"`
+	FieldID   uint   `json:"field_id"`
 	Day       string `json:"day"`
 	OpenTime  string `json:"open_time"`
 	CloseTime string `json:"close_time"`
 	IsClosed  bool   `json:"is_closed"`
 }
 
-// FieldResponse untuk payload menampilkan lapangan
+// FieldResponse adalah representasi lapangan untuk client.
 type FieldResponse struct {
-	ID          uint               `json:"id"`
-	Name        string             `json:"name"`
-	Location    string             `json:"location"`
-	Description string             `json:"description"`
-	Price       float64            `json:"price"`
-	Facilities  []string           `json:"facilities"`
-	Status      string             `json:"status"`
-	Schedule    []ScheduleResponse `json:"schedule"`
+	ID           uint               `json:"id"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description"`
+	Type         string             `json:"type"`
+	Location     string             `json:"location"`
+	PricePerHour float64            `json:"price_per_hour"`
+	Facilities   []string           `json:"facilities"`
+	Status       string             `json:"status"`
+	Schedules    []ScheduleResponse `json:"schedules,omitempty"`
 }
 
-// SlotResponse untuk payload menampilkan slot satu jam
+// SlotResponse adalah satu slot per jam pada endpoint availability.
 type SlotResponse struct {
-	StartTime   string  `json:"start_time"`
-	EndTime     string  `json:"end_time"`
-	Price       float64 `json:"price"`
-	IsAvailable bool    `json:"is_available"`
-	Reason      string  `json:"reason,omitempty"`
+	StartTime string  `json:"start_time"`
+	EndTime   string  `json:"end_time"`
+	Price     float64 `json:"price"`
+	Available bool    `json:"available"`
+	Reason    string  `json:"reason,omitempty"`
 }
 
-// AvailableResponse untuk payload menampilkan lapangan yang tersedia pada satu tanggal
-type AvailableResponse struct {
-	FieldID   uint           `json:"field_id"`
-	FieldName string         `json:"field_name"`
-	Date      string         `json:"date"`
-	Day       string         `json:"day"`
-	Price     float64        `json:"price"`
-	IsOpen    bool           `json:"is_open"`
-	OpenTime  string         `json:"open_time,omitempty"`
-	CloseTime string         `json:"close_time,omitempty"`
-	Slots     []SlotResponse `json:"slots"`
+// AvailabilityResponse adalah ketersediaan lapangan pada satu tanggal.
+type AvailabilityResponse struct {
+	FieldID      uint           `json:"field_id"`
+	FieldName    string         `json:"field_name"`
+	Date         string         `json:"date"`
+	Day          string         `json:"day"`
+	IsOpen       bool           `json:"is_open"`
+	OpenTime     string         `json:"open_time,omitempty"`
+	CloseTime    string         `json:"close_time,omitempty"`
+	PricePerHour float64        `json:"price_per_hour"`
+	Slots        []SlotResponse `json:"slots"`
 }
 
-// EncodeFacilities untuk menggabungkan fasilitas menjadi satu kolom teks
+// EncodeFacilities menggabungkan daftar fasilitas menjadi satu kolom teks.
 func EncodeFacilities(facilities []string) string {
 	cleaned := make([]string, 0, len(facilities))
-	for _, v := range facilities {
-		if trimmed := strings.TrimSpace(v); trimmed != "" {
+	for _, item := range facilities {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
 			cleaned = append(cleaned, trimmed)
 		}
 	}
 	return strings.Join(cleaned, ",")
 }
 
-// DecodeFacilities untuk memecah fasilitas menjadi satu kolom teks
+// DecodeFacilities memecah kolom teks fasilitas menjadi slice.
 func DecodeFacilities(value string) []string {
 	if strings.TrimSpace(value) == "" {
 		return []string{}
 	}
-	values := strings.Split(value, ",")
-	cleaned := make([]string, 0, len(values))
-	for _, v := range values {
-		if trimmed := strings.TrimSpace(v); trimmed != "" {
-			cleaned = append(cleaned, trimmed)
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			result = append(result, trimmed)
 		}
 	}
-	return cleaned
+	return result
 }
 
-// NewScheduleResponse untuk membuat satu schedule baru
-func NewScheduleResponse(Day, OpenTime, CloseTime string, IsClosed bool) ScheduleResponse {
+// NewScheduleResponse memetakan model jadwal menjadi response.
+func NewScheduleResponse(schedule models.Schedule) ScheduleResponse {
 	return ScheduleResponse{
-		Day:       Day,
-		OpenTime:  OpenTime,
-		CloseTime: CloseTime,
-		IsClosed:  IsClosed,
+		ID:        schedule.ID,
+		FieldID:   schedule.FieldID,
+		Day:       string(schedule.Day),
+		OpenTime:  schedule.OpenTime,
+		CloseTime: schedule.CloseTime,
+		IsClosed:  schedule.IsClosed,
 	}
 }
 
 // NewScheduleResponses memetakan daftar jadwal menjadi daftar response.
-func NewScheduleResponses(Schedule []models.Schedule) []ScheduleResponse {
-	result := make([]ScheduleResponse, 0, len(Schedule))
-	for _, schedule := range Schedule {
-		result = append(result, NewScheduleResponse(string(schedule.Day), schedule.OpenTime, schedule.CloseTime, !schedule.IsActive))
+func NewScheduleResponses(schedules []models.Schedule) []ScheduleResponse {
+	result := make([]ScheduleResponse, 0, len(schedules))
+	for _, schedule := range schedules {
+		result = append(result, NewScheduleResponse(schedule))
 	}
 	return result
 }
 
 // NewFieldResponse memetakan model lapangan menjadi response.
-func NewFieldResponse(field models.Field, schedule []ScheduleResponse) FieldResponse {
-	return FieldResponse{
-		ID:          field.ID,
-		Name:        field.Name,
-		Location:    field.Location,
-		Description: field.Description,
-		Price:       field.Price,
-		Facilities:  DecodeFacilities(field.Facilities),
-		Status:      string(field.Status),
-		Schedule:    schedule,
+func NewFieldResponse(field models.Field) FieldResponse {
+	response := FieldResponse{
+		ID:           field.ID,
+		Name:         field.Name,
+		Description:  field.Description,
+		Type:         string(field.Type),
+		Location:     field.Location,
+		PricePerHour: field.PricePerHour,
+		Facilities:   DecodeFacilities(field.Facilities),
+		Status:       string(field.Status),
 	}
+	if len(field.Schedules) > 0 {
+		response.Schedules = NewScheduleResponses(field.Schedules)
+	}
+	return response
 }
 
 // NewFieldResponses memetakan daftar lapangan menjadi daftar response.
-func NewFieldResponses(fields []models.Field, schedule []ScheduleResponse) []FieldResponse {
+func NewFieldResponses(fields []models.Field) []FieldResponse {
 	result := make([]FieldResponse, 0, len(fields))
 	for _, field := range fields {
-		result = append(result, NewFieldResponse(field, schedule))
+		result = append(result, NewFieldResponse(field))
 	}
 	return result
 }

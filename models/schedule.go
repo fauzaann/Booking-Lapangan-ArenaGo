@@ -2,69 +2,66 @@ package models
 
 import "time"
 
+// Day adalah hari operasional lapangan.
 type Day string
 
 const (
-	Monday    Day = "monday"
-	Tuesday   Day = "tuesday"
-	Wednesday Day = "wednesday"
-	Thursday  Day = "thursday"
-	Friday    Day = "friday"
-	Saturday  Day = "saturday"
-	Sunday    Day = "sunday"
+	DayMonday    Day = "MONDAY"
+	DayTuesday   Day = "TUESDAY"
+	DayWednesday Day = "WEDNESDAY"
+	DayThursday  Day = "THURSDAY"
+	DayFriday    Day = "FRIDAY"
+	DaySaturday  Day = "SATURDAY"
+	DaySunday    Day = "SUNDAY"
 )
 
+// Days mengembalikan seluruh hari dalam urutan Senin-Minggu.
 func Days() []Day {
-	return []Day{
-		Monday,
-		Tuesday,
-		Wednesday,
-		Thursday,
-		Friday,
-		Saturday,
-		Sunday,
-	}
+	return []Day{DayMonday, DayTuesday, DayWednesday, DayThursday, DayFriday, DaySaturday, DaySunday}
 }
 
-func (d Day) IsValid() bool {
-	switch d {
-	case Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday:
-		return true
-	default:
-		return false
+// Valid memeriksa apakah hari dikenal.
+func (d Day) Valid() bool {
+	for _, day := range Days() {
+		if day == d {
+			return true
+		}
 	}
+	return false
 }
 
+// DayFromWeekday memetakan time.Weekday menjadi Day.
 func DayFromWeekday(w time.Weekday) Day {
 	switch w {
 	case time.Monday:
-		return Monday
+		return DayMonday
 	case time.Tuesday:
-		return Tuesday
+		return DayTuesday
 	case time.Wednesday:
-		return Wednesday
+		return DayWednesday
 	case time.Thursday:
-		return Thursday
+		return DayThursday
 	case time.Friday:
-		return Friday
+		return DayFriday
 	case time.Saturday:
-		return Saturday
-	case time.Sunday:
-		return Sunday
+		return DaySaturday
 	default:
-		return ""
+		return DaySunday
 	}
 }
 
+// Schedule adalah jam operasional sebuah lapangan pada hari tertentu.
+// OpenTime dan CloseTime disimpan sebagai "HH:MM" agar perbandingan string
+// setara dengan perbandingan waktu.
 type Schedule struct {
-	ID        uint      `gorm:"primarykey;autoIncrement;not null;type:bigint"`
-	FieldID   uint      `gorm:"not null;type:bigint"`
-	Day       Day       `gorm:"not null;type:varchar(20)"`
-	OpenTime  string    `gorm:"not null;type:time"`
-	CloseTime string    `gorm:"not null;type:time"`
-	IsActive  bool      `gorm:"default:true;not null;type:boolean"`
-	CreatedAt time.Time `gorm:"autoCreateTime"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime"`
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	FieldID   uint      `gorm:"not null;index:idx_schedule_field_day,unique" json:"field_id"`
+	Day       Day       `gorm:"type:varchar(10);not null;index:idx_schedule_field_day,unique" json:"day"`
+	OpenTime  string    `gorm:"type:varchar(5);not null" json:"open_time"`
+	CloseTime string    `gorm:"type:varchar(5);not null" json:"close_time"`
+	IsClosed  bool      `gorm:"not null;default:false" json:"is_closed"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 
-	Field Field `gorm:"foreignKey:FieldID;references:ID;onDelete:CASCADE;onUpdate:CASCADE"`
+	Field *Field `gorm:"foreignKey:FieldID;constraint:OnDelete:CASCADE" json:"-"`
 }

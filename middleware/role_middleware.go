@@ -4,7 +4,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"Booking-Lapangan/models"
-	"Booking-Lapangan/utils"
+	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/response"
 )
 
 // RequireRole membatasi endpoint hanya untuk role tertentu.
@@ -18,11 +19,11 @@ func RequireRole(roles ...models.Role) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		actor, ok := ActorFrom(c)
 		if !ok {
-			utils.AbortWithError(c, utils.Unauthorized("authentication is required"))
+			response.AbortWithError(c, apperror.Unauthorized("authentication is required"))
 			return
 		}
-		if !allowed[models.Role(actor.Role)] {
-			utils.AbortWithError(c, utils.Forbidden("you do not have access to this resource"))
+		if !allowed[actor.Role] {
+			response.AbortWithError(c, apperror.Forbidden("you do not have access to this resource"))
 			return
 		}
 		c.Next()

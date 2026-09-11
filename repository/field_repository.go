@@ -1,22 +1,25 @@
 package repository
 
 import (
-	"Booking-Lapangan/models"
 	"context"
 
 	"gorm.io/gorm"
+
+	"Booking-Lapangan/models"
 )
 
+// FieldFilter adalah filter pencarian lapangan.
 type FieldFilter struct {
 	ListParams
-	Type     string   `json:"type"`
-	Status   string   `json:"status"`
-	Location string   `json:"location"`
-	Search   string   `json:"search"`
-	PriceMax *float64 `json:"price_max"`
-	PriceMin *float64 `json:"price_min"`
+	Type     string
+	Status   string
+	Location string
+	Search   string
+	MinPrice *float64
+	MaxPrice *float64
 }
 
+// FieldRepository adalah kontrak akses data lapangan.
 type FieldRepository interface {
 	Create(ctx context.Context, field *models.Field) error
 	Update(ctx context.Context, field *models.Field) error
@@ -91,11 +94,11 @@ func (r *fieldRepository) FindAll(ctx context.Context, filter FieldFilter) ([]mo
 	if filter.Search != "" {
 		query = query.Where("name ILIKE ?", "%"+filter.Search+"%")
 	}
-	if filter.PriceMin != nil {
-		query = query.Where("price_per_hour >= ?", *filter.PriceMin)
+	if filter.MinPrice != nil {
+		query = query.Where("price_per_hour >= ?", *filter.MinPrice)
 	}
-	if filter.PriceMax != nil {
-		query = query.Where("price_per_hour <= ?", *filter.PriceMax)
+	if filter.MaxPrice != nil {
+		query = query.Where("price_per_hour <= ?", *filter.MaxPrice)
 	}
 
 	var total int64

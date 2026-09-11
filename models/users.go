@@ -2,62 +2,34 @@ package models
 
 import "time"
 
-// AppError struct mewakili error aplikasi
-type AppError struct {
-	Code    int
-	Message string
-}
-
-// Error mengimplementasikan interface error untuk AppError
-func (e *AppError) Error() string {
-	if e == nil {
-		return ""
-	}
-	return e.Message
-}
-
-// role dalam sistem
+// Role adalah peran pengguna dalam sistem.
 type Role string
 
-// Konstanta untuk role pengguna
 const (
-	RoleAdmin Role = "ADMIN"
 	RoleUser  Role = "USER"
+	RoleAdmin Role = "ADMIN"
 )
 
-// IsValid memeriksa apakah role valid
-func (r Role) IsValid() bool {
-	switch r {
-	case RoleAdmin, RoleUser:
-		return true
-	default:
-		return false
-	}
+// Valid memeriksa role yang dikenal sistem.
+func (r Role) Valid() bool {
+	return r == RoleUser || r == RoleAdmin
 }
 
-// User struct mewakili entitas pengguna dalam sistem
+// User adalah akun yang dapat login ke sistem.
 type User struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	Username  string    `gorm:"type:varchar(100);not null" json:"username"`
-	Password  string    `gorm:"type:varchar(255);not null;unique" json:"password"`
-	Role      Role      `gorm:"type:varchar(50);not null;default:'USER'" json:"role"`
+	Name      string    `gorm:"type:varchar(100);not null" json:"name"`
+	Email     string    `gorm:"type:varchar(150);not null;uniqueIndex" json:"email"`
+	Password  string    `gorm:"type:varchar(255);not null" json:"-"`
 	Phone     string    `gorm:"type:varchar(20)" json:"phone"`
-	Email     string    `gorm:"type:varchar(100);unique" json:"email"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	Role      Role      `gorm:"type:varchar(20);not null;default:'USER';index" json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 
-	Bookings []Booking `gorm:"foreignKey:UserID" json:"bookings"`
+	Bookings []Booking `gorm:"foreignKey:UserID" json:"-"`
 }
 
-// IsValid memeriksa apakah pengguna valid
-func (u *User) IsValid() bool {
-	if u.Username == "" || u.Password == "" || !u.Role.IsValid() {
-		return false
-	}
-	return true
-}
-
-// IsAdmin memeriksa apakah pengguna memiliki peran admin
+// IsAdmin menandakan user memiliki hak akses administrator.
 func (u *User) IsAdmin() bool {
 	return u.Role == RoleAdmin
 }

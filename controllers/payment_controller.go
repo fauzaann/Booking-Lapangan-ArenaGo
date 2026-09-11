@@ -9,25 +9,26 @@ import (
 
 	"Booking-Lapangan/dto"
 	"Booking-Lapangan/models"
+	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/xendit"
 	"Booking-Lapangan/repository"
-	"Booking-Lapangan/utils"
 )
 
 // PaymentController menangani webhook dan pembacaan data pembayaran.
 type PaymentController interface {
-	HandleWebhook(ctx context.Context, callbackToken string, payload utils.WebhookPayload) error
+	HandleWebhook(ctx context.Context, callbackToken string, payload xendit.WebhookPayload) error
 	DetailByBooking(ctx context.Context, actor Actor, bookingID uint) (*dto.PaymentResponse, error)
 	List(ctx context.Context, query dto.PaymentFilterQuery) ([]dto.PaymentResponse, int64, error)
 }
 
 type paymentController struct {
 	uow          repository.UnitOfWork
-	invoices     utils.InvoiceService
+	invoices     xendit.InvoiceService
 	webhookToken string
 }
 
 // NewPaymentController membuat PaymentController.
-func NewPaymentController(uow repository.UnitOfWork, invoices utils.InvoiceService, webhookToken string) PaymentController {
+func NewPaymentController(uow repository.UnitOfWork, invoices xendit.InvoiceService, webhookToken string) PaymentController {
 	return &paymentController{uow: uow, invoices: invoices, webhookToken: webhookToken}
 }
 
@@ -39,15 +40,15 @@ func NewPaymentController(uow repository.UnitOfWork, invoices utils.InvoiceServi
 //     verification), bukan sekadar percaya body request.
 //  3. Idempotent: payment yang sudah berstatus final diabaikan sehingga
 //     webhook berulang tidak menghasilkan perubahan ganda.
-func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken string, payload utils.WebhookPayload) error {
+func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken string, payload xendit.WebhookPayload) error {
 	if c.webhookToken == "" {
-		return utils.Internal("webhook token is not configured", nil)
+		return apperror.Internal("webhook token is not configured", nil)
 	}
 	if subtle.ConstantTimeCompare([]byte(callbackToken), []byte(c.webhookToken)) != 1 {
-		return utils.Unauthorized("invalid callback token")
+		return apperror.Unauthorized("invalid callback token")
 	}
 	if strings.TrimSpace(payload.ExternalID) == "" {
-		return utils.BadRequest("external_id is required")
+		return apperror.BadRequest("external_id is required")
 	}
 
 	verified := c.verify(ctx, payload)
@@ -69,14 +70,14 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 		}
 
 		switch strings.ToUpper(strings.TrimSpace(verified.Status)) {
-		case utils.StatusPaid, utils.StatusSettled:
+		case xendit.StatusPaid, xendit.StatusSettled:
 			paid := verified.PaidAmount
 			if paid == 0 {
 				paid = verified.Amount
 			}
 			// Toleransi 1 rupiah untuk pembulatan float.
 			if paid+1 < payment.Amount || math.IsNaN(paid) {
-				return utils.BadRequest("paid amount does not match invoice amount")
+				return apperror.BadRequest("paid amount does not match invoice amount")
 			}
 
 			paidAt := verified.PaidAt
@@ -90,7 +91,7 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 			payment.PaymentChannel = verified.PaymentChannel
 			booking.Status = models.BookingStatusConfirmed
 
-		case utils.StatusExpired:
+		case xendit.StatusExpired:
 			payment.Status = models.PaymentStatusExpired
 			if booking.Status == models.BookingStatusPending || booking.Status == models.BookingStatusWaitingPayment {
 				booking.Status = models.BookingStatusExpired
@@ -110,7 +111,7 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 
 // verify mengambil ulang data invoice dari Xendit. Jika gagal (misal jaringan),
 // aplikasi tetap memakai payload webhook yang tokennya sudah tervalidasi.
-func (c *paymentController) verify(ctx context.Context, payload utils.WebhookPayload) utils.WebhookPayload {
+func (c *paymentController) verify(ctx context.Context, payload xendit.WebhookPayload) xendit.WebhookPayload {
 	if c.invoices == nil || strings.TrimSpace(payload.ID) == "" {
 		return payload
 	}

@@ -26,7 +26,7 @@ func NewAdminController(uow repository.UnitOfWork) AdminController {
 // Dashboard merangkum jumlah user, lapangan, booking per status, dan revenue.
 // Revenue dihitung dari pembayaran berstatus PAID, bukan dari total booking.
 func (c *adminController) Dashboard(ctx context.Context) (*dto.DashboardResponse, error) {
-	totalUsers, err := c.uow.User().Count(ctx, &models.User{})
+	totalUsers, err := c.uow.User().Count(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -69,22 +69,9 @@ func (c *adminController) Dashboard(ctx context.Context) (*dto.DashboardResponse
 func (c *adminController) ListUsers(ctx context.Context, query dto.PaginationQuery) ([]dto.UserResponse, int64, error) {
 	query = query.Normalize()
 
-	// 1. Fungsi Count meminta (*models.User) -> Sesuai dengan repository Anda
-	total, err := c.uow.User().Count(ctx, &models.User{})
+	users, total, err := c.uow.User().FindAll(ctx, repository.ListParams{Page: query.Page, Limit: query.Limit})
 	if err != nil {
 		return nil, 0, err
 	}
-
-	if total == 0 {
-		return []dto.UserResponse{}, 0, nil
-	}
-
-	// 2. Fungsi FindAll meminta (string) -> Kita kirim string kosong "" untuk mengambil semua user
-	// Jika di masa depan dto.PaginationQuery Anda punya properti .Search, Anda bisa mengirim query.Search ke sini.
-	users, err := c.uow.User().FindAll(ctx, "")
-	if err != nil {
-		return nil, 0, err
-	}
-
 	return dto.NewUserResponses(users), total, nil
 }

@@ -9,6 +9,7 @@ const (
 	FieldTypeBasket     FieldType = "BASKET"
 	FieldTypeTennis     FieldType = "TENNIS"
 	FieldTypeMiniSoccer FieldType = "MINI_SOCCER"
+	FieldTypePadel      FieldType = "PADEL"
 )
 
 // FieldTypes mengembalikan seluruh jenis lapangan yang valid.
@@ -19,6 +20,7 @@ func FieldTypes() []FieldType {
 		FieldTypeBasket,
 		FieldTypeTennis,
 		FieldTypeMiniSoccer,
+		FieldTypePadel,
 	}
 }
 

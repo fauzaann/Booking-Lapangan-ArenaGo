@@ -1,51 +1,51 @@
 package handler
 
 import (
-    "Booking-Lapangan/controllers"
-    "Booking-Lapangan/dto"
-    "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
+
+	"Booking-Lapangan/controllers"
+	"Booking-Lapangan/dto"
+	"Booking-Lapangan/pkg/response"
+	"Booking-Lapangan/pkg/validator"
 )
 
+// AuthHandler menangani endpoint /auth.
 type AuthHandler struct {
-    auth *controllers.AuthController
+	Base
+	auth controllers.AuthController
 }
 
-func NewAuthHandler(authController *controllers.AuthController) *AuthHandler {
-    return &AuthHandler{auth: authController}
+// NewAuthHandler membuat AuthHandler.
+func NewAuthHandler(auth controllers.AuthController, validate *validator.Validator) *AuthHandler {
+	return &AuthHandler{Base: NewBase(validate), auth: auth}
 }
 
-func (h *AuthHandler) bindJSON(c *gin.Context, req any) bool {
-    if err := c.ShouldBindJSON(req); err != nil {
-        dto.Error(c, err)
-        return false
-    }
-    return true
-}
-
+// Register menangani POST /api/v1/auth/register.
 func (h *AuthHandler) Register(c *gin.Context) {
-    var req dto.RegisterRequest
-    if !h.bindJSON(c, &req) {
-        return
-    }
+	var req dto.RegisterRequest
+	if !h.bindJSON(c, &req) {
+		return
+	}
 
-    result, err := h.auth.Register(c.Request.Context(), req.Username, req.Email, req.Password)
-    if err != nil {
-        dto.Error(c, err)
-        return
-    }
-    dto.Created(c, "Registration successful", result)
+	result, err := h.auth.Register(c.Request.Context(), req)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, "Registration successful", result)
 }
 
+// Login menangani POST /api/v1/auth/login.
 func (h *AuthHandler) Login(c *gin.Context) {
-    var req dto.LoginRequest
-    if !h.bindJSON(c, &req) {
-        return
-    }
+	var req dto.LoginRequest
+	if !h.bindJSON(c, &req) {
+		return
+	}
 
-    result, err := h.auth.Login(c.Request.Context(), req.Email, req.Password)
-    if err != nil {
-        dto.Error(c, err)
-        return
-    }
-    dto.OK(c, "Login successful", result)
+	result, err := h.auth.Login(c.Request.Context(), req)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, "Login successful", result)
 }

@@ -5,7 +5,8 @@ import (
 
 	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/dto"
-	"Booking-Lapangan/utils"
+	"Booking-Lapangan/pkg/response"
+	"Booking-Lapangan/pkg/validator"
 )
 
 // ScheduleHandler menangani jam operasional lapangan.
@@ -15,41 +16,41 @@ type ScheduleHandler struct {
 }
 
 // NewScheduleHandler membuat ScheduleHandler.
-func NewScheduleHandler(fields controllers.FieldController, validate *utils.Validator) *ScheduleHandler {
+func NewScheduleHandler(fields controllers.FieldController, validate *validator.Validator) *ScheduleHandler {
 	return &ScheduleHandler{Base: NewBase(validate), fields: fields}
 }
 
 // List menangani GET /api/v1/fields/:id/schedules.
 func (h *ScheduleHandler) List(c *gin.Context) {
-	fieldID, ok := UintParam(c, "id")
+	fieldID, ok := uintParam(c, "id")
 	if !ok {
 		return
 	}
 
 	schedules, err := h.fields.ListSchedules(c.Request.Context(), fieldID)
 	if err != nil {
-		utils.Error(c, err)
+		response.Error(c, err)
 		return
 	}
-	utils.OK(c, "Schedules retrieved", schedules)
+	response.OK(c, "Schedules retrieved", schedules)
 }
 
 // Upsert menangani PUT /api/v1/admin/fields/:id/schedules.
 func (h *ScheduleHandler) Upsert(c *gin.Context) {
-	fieldID, ok := UintParam(c, "id")
+	fieldID, ok := uintParam(c, "id")
 	if !ok {
 		return
 	}
 
 	var req dto.UpsertScheduleRequest
-	if !h.BindJSON(c, &req) {
+	if !h.bindJSON(c, &req) {
 		return
 	}
 
 	schedules, err := h.fields.UpsertSchedules(c.Request.Context(), fieldID, req)
 	if err != nil {
-		utils.Error(c, err)
+		response.Error(c, err)
 		return
 	}
-	utils.OK(c, "Schedules updated", schedules)
+	response.OK(c, "Schedules updated", schedules)
 }

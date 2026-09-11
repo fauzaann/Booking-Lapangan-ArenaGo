@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"Booking-Lapangan/models"
-	"Booking-Lapangan/utils"
+	"Booking-Lapangan/pkg/apperror"
 )
 
 // BookingFilter adalah filter pencarian booking.
@@ -174,7 +174,7 @@ func (r *bookingRepository) LockFieldDate(ctx context.Context, fieldID uint, dat
 		Exec("SELECT pg_advisory_xact_lock(?)", advisoryKey(fmt.Sprintf("field:%d:%s", fieldID, date.Format("2006-01-02")))).
 		Error
 	if err != nil {
-		return utils.Internal("failed to acquire booking lock", err)
+		return apperror.Internal("failed to acquire booking lock", err)
 	}
 	return nil
 }
@@ -187,7 +187,7 @@ func (r *bookingRepository) NextSequence(ctx context.Context, date time.Time) (i
 	if err := r.db.WithContext(ctx).
 		Exec("SELECT pg_advisory_xact_lock(?)", advisoryKey("booking-code:"+date.Format("2006-01-02"))).
 		Error; err != nil {
-		return 0, utils.Internal("failed to acquire booking code lock", err)
+		return 0, apperror.Internal("failed to acquire booking code lock", err)
 	}
 
 	var count int64

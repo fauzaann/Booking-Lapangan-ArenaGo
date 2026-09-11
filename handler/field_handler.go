@@ -5,7 +5,9 @@ import (
 
 	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/dto"
-	"Booking-Lapangan/utils"
+	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/response"
+	"Booking-Lapangan/pkg/validator"
 )
 
 // FieldHandler menangani endpoint lapangan (publik dan admin).
@@ -15,107 +17,107 @@ type FieldHandler struct {
 }
 
 // NewFieldHandler membuat FieldHandler.
-func NewFieldHandler(fields controllers.FieldController, validate *utils.Validator) *FieldHandler {
+func NewFieldHandler(fields controllers.FieldController, validate *validator.Validator) *FieldHandler {
 	return &FieldHandler{Base: NewBase(validate), fields: fields}
 }
 
 // List menangani GET /api/v1/fields dengan filter dan pagination.
 func (h *FieldHandler) List(c *gin.Context) {
-	var query dto.FieldFilter
-	if !h.BindQuery(c, &query) {
+	var query dto.FieldFilterQuery
+	if !h.bindQuery(c, &query) {
 		return
 	}
 	query.PaginationQuery = query.PaginationQuery.Normalize()
 
 	fields, total, err := h.fields.List(c.Request.Context(), query)
 	if err != nil {
-		utils.Error(c, err)
+		response.Error(c, err)
 		return
 	}
-	utils.Paginated(c, "Fields retrieved", fields, utils.NewMeta(query.Page, query.Limit, total))
+	response.Paginated(c, "Fields retrieved", fields, response.NewMeta(query.Page, query.Limit, total))
 }
 
 // Detail menangani GET /api/v1/fields/:id.
 func (h *FieldHandler) Detail(c *gin.Context) {
-	id, ok := UintParam(c, "id")
+	id, ok := uintParam(c, "id")
 	if !ok {
 		return
 	}
 
 	field, err := h.fields.Detail(c.Request.Context(), id)
 	if err != nil {
-		utils.Error(c, err)
+		response.Error(c, err)
 		return
 	}
-	utils.OK(c, "Field retrieved", field)
+	response.OK(c, "Field retrieved", field)
 }
 
 // Availability menangani GET /api/v1/fields/:id/availability?date=YYYY-MM-DD.
 func (h *FieldHandler) Availability(c *gin.Context) {
-	id, ok := UintParam(c, "id")
+	id, ok := uintParam(c, "id")
 	if !ok {
 		return
 	}
 
 	date := c.Query("date")
 	if date == "" {
-		utils.Error(c, utils.BadRequest("date query parameter is required (YYYY-MM-DD)"))
+		response.Error(c, apperror.BadRequest("date query parameter is required (YYYY-MM-DD)"))
 		return
 	}
 
 	result, err := h.fields.Availability(c.Request.Context(), id, date)
 	if err != nil {
-		utils.Error(c, err)
+		response.Error(c, err)
 		return
 	}
-	utils.OK(c, "Availability retrieved", result)
+	response.OK(c, "Availability retrieved", result)
 }
 
 // Create menangani POST /api/v1/admin/fields.
 func (h *FieldHandler) Create(c *gin.Context) {
 	var req dto.CreateFieldRequest
-	if !h.BindJSON(c, &req) {
+	if !h.bindJSON(c, &req) {
 		return
 	}
 
 	field, err := h.fields.Create(c.Request.Context(), req)
 	if err != nil {
-		utils.Error(c, err)
+		response.Error(c, err)
 		return
 	}
-	utils.OK(c, "Field created", field)
+	response.Created(c, "Field created", field)
 }
 
 // Update menangani PUT /api/v1/admin/fields/:id.
 func (h *FieldHandler) Update(c *gin.Context) {
-	id, ok := UintParam(c, "id")
+	id, ok := uintParam(c, "id")
 	if !ok {
 		return
 	}
 
 	var req dto.UpdateFieldRequest
-	if !h.BindJSON(c, &req) {
+	if !h.bindJSON(c, &req) {
 		return
 	}
 
 	field, err := h.fields.Update(c.Request.Context(), id, req)
 	if err != nil {
-		utils.Error(c, err)
+		response.Error(c, err)
 		return
 	}
-	utils.OK(c, "Field updated", field)
+	response.OK(c, "Field updated", field)
 }
 
 // Delete menangani DELETE /api/v1/admin/fields/:id.
 func (h *FieldHandler) Delete(c *gin.Context) {
-	id, ok := UintParam(c, "id")
+	id, ok := uintParam(c, "id")
 	if !ok {
 		return
 	}
 
 	if err := h.fields.Delete(c.Request.Context(), id); err != nil {
-		utils.Error(c, err)
+		response.Error(c, err)
 		return
 	}
-	utils.OK(c, "Field deleted", nil)
+	response.OK(c, "Field deleted", nil)
 }

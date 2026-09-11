@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"Booking-Lapangan/models"
-	"Booking-Lapangan/utils"
+	"Booking-Lapangan/pkg/timeutil"
 )
 
 // CreateBookingRequest adalah payload pembuatan booking.
@@ -81,7 +81,7 @@ func NewBookingResponse(booking models.Booking) BookingResponse {
 		BookingCode: booking.BookingCode,
 		UserID:      booking.UserID,
 		FieldID:     booking.FieldID,
-		BookingDate: booking.BookingDate.Format(utils.DateLayout),
+		BookingDate: booking.BookingDate.Format(timeutil.DateLayout),
 		StartTime:   booking.StartTime,
 		EndTime:     booking.EndTime,
 		Duration:    booking.Duration,

@@ -6,18 +6,19 @@ import (
 
 	"Booking-Lapangan/dto"
 	"Booking-Lapangan/models"
+	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/timeutil"
 	"Booking-Lapangan/repository"
-	"Booking-Lapangan/utils"
 )
 
 // FieldController menangani manajemen lapangan, jadwal, dan availability.
 type FieldController interface {
-	List(ctx context.Context, query dto.FieldFilter) ([]dto.FieldResponse, int64, error)
+	List(ctx context.Context, query dto.FieldFilterQuery) ([]dto.FieldResponse, int64, error)
 	Detail(ctx context.Context, id uint) (*dto.FieldResponse, error)
 	Create(ctx context.Context, req dto.CreateFieldRequest) (*dto.FieldResponse, error)
 	Update(ctx context.Context, id uint, req dto.UpdateFieldRequest) (*dto.FieldResponse, error)
 	Delete(ctx context.Context, id uint) error
-	Availability(ctx context.Context, id uint, date string) (*dto.AvailableResponse, error)
+	Availability(ctx context.Context, id uint, date string) (*dto.AvailabilityResponse, error)
 	ListSchedules(ctx context.Context, fieldID uint) ([]dto.ScheduleResponse, error)
 	UpsertSchedules(ctx context.Context, fieldID uint, req dto.UpsertScheduleRequest) ([]dto.ScheduleResponse, error)
 }
@@ -31,11 +32,11 @@ func NewFieldController(uow repository.UnitOfWork) FieldController {
 	return &fieldController{uow: uow}
 }
 
-func (c *fieldController) List(ctx context.Context, query dto.FieldFilter) ([]dto.FieldResponse, int64, error) {
+func (c *fieldController) List(ctx context.Context, query dto.FieldFilterQuery) ([]dto.FieldResponse, int64, error) {
 	query.PaginationQuery = query.PaginationQuery.Normalize()
 
-	if query.PriceMin != nil && query.PriceMax != nil && *query.PriceMin > *query.PriceMax {
-		return nil, 0, utils.BadRequest("min_price cannot be greater than max_price")
+	if query.MinPrice != nil && query.MaxPrice != nil && *query.MinPrice > *query.MaxPrice {
+		return nil, 0, apperror.BadRequest("min_price cannot be greater than max_price")
 	}
 
 	filter := repository.FieldFilter{
@@ -44,15 +45,15 @@ func (c *fieldController) List(ctx context.Context, query dto.FieldFilter) ([]dt
 		Status:     strings.ToUpper(strings.TrimSpace(query.Status)),
 		Location:   strings.TrimSpace(query.Location),
 		Search:     strings.TrimSpace(query.Search),
-		PriceMin:   query.PriceMin,
-		PriceMax:   query.PriceMax,
+		MinPrice:   query.MinPrice,
+		MaxPrice:   query.MaxPrice,
 	}
 
 	fields, total, err := c.uow.Field().FindAll(ctx, filter)
 	if err != nil {
 		return nil, 0, err
 	}
-	return dto.NewFieldResponses(fields, nil), total, nil
+	return dto.NewFieldResponses(fields), total, nil
 }
 
 func (c *fieldController) Detail(ctx context.Context, id uint) (*dto.FieldResponse, error) {
@@ -60,7 +61,7 @@ func (c *fieldController) Detail(ctx context.Context, id uint) (*dto.FieldRespon
 	if err != nil {
 		return nil, err
 	}
-	response := dto.NewFieldResponse(*field, nil)
+	response := dto.NewFieldResponse(*field)
 	return &response, nil
 }
 
@@ -72,13 +73,13 @@ func (c *fieldController) Create(ctx context.Context, req dto.CreateFieldRequest
 	}
 
 	field := &models.Field{
-		Name:        strings.TrimSpace(req.Name),
-		Description: strings.TrimSpace(req.Description),
-		Type:        models.FieldType(strings.ToUpper(req.Type)),
-		Location:    strings.TrimSpace(req.Location),
-		Price:       req.Price,
-		Facilities:  dto.EncodeFacilities(req.Facilities),
-		Status:      status,
+		Name:         strings.TrimSpace(req.Name),
+		Description:  strings.TrimSpace(req.Description),
+		Type:         models.FieldType(strings.ToUpper(req.Type)),
+		Location:     strings.TrimSpace(req.Location),
+		PricePerHour: req.PricePerHour,
+		Facilities:   dto.EncodeFacilities(req.Facilities),
+		Status:       status,
 	}
 
 	schedules, err := buildSchedules(req.Schedules)
@@ -123,8 +124,8 @@ func (c *fieldController) Update(ctx context.Context, id uint, req dto.UpdateFie
 	if req.Location != nil {
 		field.Location = strings.TrimSpace(*req.Location)
 	}
-	if req.Price != nil {
-		field.Price = *req.Price
+	if req.PricePerHour != nil {
+		field.PricePerHour = *req.PricePerHour
 	}
 	if req.Status != nil {
 		field.Status = models.FieldStatus(strings.ToUpper(*req.Status))
@@ -145,13 +146,13 @@ func (c *fieldController) Delete(ctx context.Context, id uint) error {
 
 // Availability menyusun slot per jam beserta status ketersediaannya
 // berdasarkan jadwal operasional dan booking aktif pada tanggal tersebut.
-func (c *fieldController) Availability(ctx context.Context, id uint, date string) (*dto.AvailableResponse, error) {
-	bookingDate, err := utils.ParseDate(date)
+func (c *fieldController) Availability(ctx context.Context, id uint, date string) (*dto.AvailabilityResponse, error) {
+	bookingDate, err := timeutil.ParseDate(date)
 	if err != nil {
-		return nil, utils.BadRequest("date must use YYYY-MM-DD format")
+		return nil, apperror.BadRequest("date must use YYYY-MM-DD format")
 	}
-	if bookingDate.Before(utils.Today()) {
-		return nil, utils.BadRequest("date must not be in the past")
+	if bookingDate.Before(timeutil.Today()) {
+		return nil, apperror.BadRequest("date must not be in the past")
 	}
 
 	field, err := c.uow.Field().FindByID(ctx, id)
@@ -160,27 +161,27 @@ func (c *fieldController) Availability(ctx context.Context, id uint, date string
 	}
 
 	day := models.DayFromWeekday(bookingDate.Weekday())
-	response := &dto.AvailableResponse{
-		FieldID:   field.ID,
-		FieldName: field.Name,
-		Date:      bookingDate.Format(utils.DateLayout),
-		Day:       string(day),
-		Price:     field.Price,
-		Slots:     []dto.SlotResponse{},
+	response := &dto.AvailabilityResponse{
+		FieldID:      field.ID,
+		FieldName:    field.Name,
+		Date:         bookingDate.Format(timeutil.DateLayout),
+		Day:          string(day),
+		PricePerHour: field.PricePerHour,
+		Slots:        []dto.SlotResponse{},
 	}
 
-	if !field.IsValid() {
+	if !field.IsActive() {
 		return response, nil
 	}
 
 	schedule, err := c.uow.Schedule().FindByFieldAndDay(ctx, field.ID, day)
 	if err != nil {
-		if utils.IsNotFound(err) {
+		if apperror.IsNotFound(err) {
 			return response, nil
 		}
 		return nil, err
 	}
-	if schedule.IsActive {
+	if schedule.IsClosed {
 		return response, nil
 	}
 
@@ -193,29 +194,29 @@ func (c *fieldController) Availability(ctx context.Context, id uint, date string
 		return nil, err
 	}
 
-	now := utils.Today()
+	now := timeutil.Today()
 	isToday := bookingDate.Equal(now)
 
-	for _, slot := range utils.HourlySlots(schedule.OpenTime, schedule.CloseTime) {
+	for _, slot := range timeutil.HourlySlots(schedule.OpenTime, schedule.CloseTime) {
 		item := dto.SlotResponse{
-			StartTime:   slot[0],
-			EndTime:     slot[1],
-			Price:       field.Price,
-			IsAvailable: true,
+			StartTime: slot[0],
+			EndTime:   slot[1],
+			Price:     field.PricePerHour,
+			Available: true,
 		}
 
 		for _, booking := range bookings {
-			if utils.Overlap(slot[0], slot[1], booking.StartTime, booking.EndTime) {
-				item.IsAvailable = false
+			if timeutil.Overlap(slot[0], slot[1], booking.StartTime, booking.EndTime) {
+				item.Available = false
 				item.Reason = "already booked"
 				break
 			}
 		}
 
-		if item.IsAvailable && isToday {
-			slotStart, convErr := utils.CombineDateTime(bookingDate, slot[0])
+		if item.Available && isToday {
+			slotStart, convErr := timeutil.CombineDateTime(bookingDate, slot[0])
 			if convErr == nil && slotStart.Before(timeNow()) {
-				item.IsAvailable = false
+				item.Available = false
 				item.Reason = "time has passed"
 			}
 		}
@@ -262,17 +263,17 @@ func buildSchedules(requests []dto.ScheduleRequest) ([]models.Schedule, error) {
 
 	for _, item := range requests {
 		day := models.Day(strings.ToUpper(strings.TrimSpace(item.Day)))
-		if !day.IsValid() {
-			return nil, utils.Unprocessable("invalid schedule day: " + item.Day)
+		if !day.Valid() {
+			return nil, apperror.Unprocessable("invalid schedule day: " + item.Day)
 		}
 		if seen[day] {
-			return nil, utils.Unprocessable("duplicated schedule for day " + string(day))
+			return nil, apperror.Unprocessable("duplicated schedule for day " + string(day))
 		}
 		seen[day] = true
 
 		if !item.IsClosed {
-			if _, err := utils.DurationHours(item.OpenTime, item.CloseTime); err != nil {
-				return nil, utils.Unprocessable("invalid operating hours for " + string(day) + ": " + err.Error())
+			if _, err := timeutil.DurationHours(item.OpenTime, item.CloseTime); err != nil {
+				return nil, apperror.Unprocessable("invalid operating hours for " + string(day) + ": " + err.Error())
 			}
 		}
 
@@ -280,7 +281,7 @@ func buildSchedules(requests []dto.ScheduleRequest) ([]models.Schedule, error) {
 			Day:       day,
 			OpenTime:  item.OpenTime,
 			CloseTime: item.CloseTime,
-			IsActive:  item.IsClosed,
+			IsClosed:  item.IsClosed,
 		})
 	}
 	return schedules, nil

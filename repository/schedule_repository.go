@@ -3,12 +3,13 @@ package repository
 import (
 	"context"
 
-	"Booking-Lapangan/models"
-
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"Booking-Lapangan/models"
 )
 
+// ScheduleRepository adalah kontrak akses data jadwal operasional lapangan.
 type ScheduleRepository interface {
 	FindByFieldID(ctx context.Context, fieldID uint) ([]models.Schedule, error)
 	FindByFieldAndDay(ctx context.Context, fieldID uint, day models.Day) (*models.Schedule, error)
@@ -20,6 +21,7 @@ type scheduleRepository struct {
 	db *gorm.DB
 }
 
+// NewScheduleRepository membuat implementasi ScheduleRepository berbasis GORM.
 func NewScheduleRepository(db *gorm.DB) ScheduleRepository {
 	return &scheduleRepository{db: db}
 }
@@ -55,7 +57,7 @@ func (r *scheduleRepository) Upsert(ctx context.Context, schedules []models.Sche
 	}
 	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "field_id"}, {Name: "day"}},
-		DoUpdates: clause.AssignmentColumns([]string{"open_time", "close_time", "is_active", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"open_time", "close_time", "is_closed", "updated_at"}),
 	}).Create(&schedules).Error
 	return translate(err, "schedule not found")
 }

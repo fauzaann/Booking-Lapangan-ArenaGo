@@ -2,74 +2,105 @@ package controllers
 
 import (
 	"context"
+	"strings"
 
+	"Booking-Lapangan/dto"
 	"Booking-Lapangan/models"
+	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/jwt"
+	"Booking-Lapangan/pkg/password"
 	"Booking-Lapangan/repository"
 )
 
-// AuthController struct mewakili pengontrol untuk otentikasi pengguna
-type AuthController struct {
-	userRepo repository.UserRepository
+// AuthController menangani registrasi, login, dan profil user.
+type AuthController interface {
+	Register(ctx context.Context, req dto.RegisterRequest) (*dto.AuthResponse, error)
+	Login(ctx context.Context, req dto.LoginRequest) (*dto.AuthResponse, error)
+	Profile(ctx context.Context, userID uint) (*dto.UserResponse, error)
 }
 
-func NewAuthController(userRepo repository.UserRepository) *AuthController {
-	return &AuthController{userRepo: userRepo}
+type authController struct {
+	users  repository.UserRepository
+	tokens jwt.Manager
 }
 
-func (c *AuthController) Register(ctx context.Context, username, email, password string) (*models.User, error) {
-	// Periksa apakah pengguna dengan email yang sama sudah ada
-	exists, err := c.userRepo.ExistsByEmail(ctx, email)
+// NewAuthController membuat AuthController.
+func NewAuthController(users repository.UserRepository, tokens jwt.Manager) AuthController {
+	return &authController{users: users, tokens: tokens}
+}
+
+func (c *authController) Register(ctx context.Context, req dto.RegisterRequest) (*dto.AuthResponse, error) {
+	email := normalizeEmail(req.Email)
+
+	exists, err := c.users.ExistsByEmail(ctx, email)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
-		return nil, &models.AppError{Message: "Email already exists", Code: 400}
+		return nil, apperror.Conflict("email is already registered")
 	}
 
-	// Buat pengguna baru
+	hashed, err := password.Hash(req.Password)
+	if err != nil {
+		return nil, apperror.Internal("failed to secure password", err)
+	}
+
 	user := &models.User{
-		Username: username,
+		Name:     strings.TrimSpace(req.Name),
 		Email:    email,
-		Password: password,
+		Password: hashed,
+		Phone:    strings.TrimSpace(req.Phone),
 		Role:     models.RoleUser,
 	}
 
-	if !user.IsValid() {
-		return nil, &models.AppError{Message: "Invalid user data", Code: 400}
-	}
-
-	if err = c.userRepo.CreateUser(ctx, user); err != nil {
+	if err := c.users.Create(ctx, user); err != nil {
+		if apperror.IsConflict(err) {
+			return nil, apperror.Conflict("email is already registered")
+		}
 		return nil, err
 	}
 
-	return user, nil
+	return c.issueToken(user)
 }
 
-func (c *AuthController) Login(ctx context.Context, email, password string) (*models.User, error) {
-	user, err := c.userRepo.GetUserByUsernameEmail(ctx, email)
+func (c *authController) Login(ctx context.Context, req dto.LoginRequest) (*dto.AuthResponse, error) {
+	user, err := c.users.FindByEmail(ctx, normalizeEmail(req.Email))
 	if err != nil {
-		return nil, &models.AppError{Message: "Invalid email or password", Code: 401}
+		if apperror.IsNotFound(err) {
+			// Pesan sengaja sama dengan password salah agar email tidak dapat dienumerasi.
+			return nil, apperror.Unauthorized("invalid email or password")
+		}
+		return nil, err
 	}
 
-	if user.Password != password {
-		return nil, &models.AppError{Message: "Invalid email or password", Code: 401}
+	if !password.Verify(user.Password, req.Password) {
+		return nil, apperror.Unauthorized("invalid email or password")
 	}
 
-	return user, nil
+	return c.issueToken(user)
 }
 
-func (c *AuthController) Profile(ctx context.Context, userID uint) (*models.User, error) {
-	user, err := c.userRepo.GetUserByID(ctx, userID)
+func (c *authController) Profile(ctx context.Context, userID uint) (*dto.UserResponse, error) {
+	user, err := c.users.FindByID(ctx, userID)
 	if err != nil {
-		return nil, &models.AppError{Message: "User not found", Code: 404}
+		return nil, err
 	}
-	return user, nil
+	response := dto.NewUserResponse(*user)
+	return &response, nil
 }
 
-func (c *AuthController) GetProfile(ctx context.Context, userID uint) (*models.User, error) {
-	return c.Profile(ctx, userID)
+func (c *authController) issueToken(user *models.User) (*dto.AuthResponse, error) {
+	token, expiresAt, err := c.tokens.Generate(user.ID, user.Email, string(user.Role))
+	if err != nil {
+		return nil, apperror.Internal("failed to generate token", err)
+	}
+	return &dto.AuthResponse{
+		Token:     token,
+		ExpiresAt: expiresAt,
+		User:      dto.NewUserResponse(*user),
+	}, nil
 }
 
-func (c *AuthController) Logout(ctx context.Context) error {
-	return nil
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }

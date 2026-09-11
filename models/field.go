@@ -1,33 +1,44 @@
 package models
 
-import "time"
+import (
+	"time"
 
+	"gorm.io/gorm"
+)
+
+// FieldStatus adalah status operasional lapangan.
 type FieldStatus string
 
 const (
-	FieldStatusActive      FieldStatus = "active"
-	FieldStatusInactive    FieldStatus = "inactive"
-	FieldStatusMaintenance FieldStatus = "maintenance"
+	FieldStatusActive      FieldStatus = "ACTIVE"
+	FieldStatusInactive    FieldStatus = "INACTIVE"
+	FieldStatusMaintenance FieldStatus = "MAINTENANCE"
 )
 
-func (s FieldStatus) IsValid() bool {
+// Valid memeriksa apakah status lapangan dikenal.
+func (s FieldStatus) Valid() bool {
 	return s == FieldStatusActive || s == FieldStatusInactive || s == FieldStatusMaintenance
 }
 
+// Field adalah lapangan yang dapat dibooking.
 type Field struct {
-	ID          uint        `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name        string      `gorm:"column:name;not null" json:"name"`
-	Location    string      `gorm:"column:location;not null" json:"location"`
-	Description string      `gorm:"column:description" json:"description"`
-	Type        FieldType   `gorm:"column:type;not null" json:"type"`
-	Price       float64     `gorm:"column:price;not null" json:"price"`
-	Facilities  string      `gorm:"column:facilities" json:"facilities"`
-	CreatedAt   time.Time   `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt   time.Time   `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
-	DeletedAt   *time.Time  `gorm:"column:deleted_at" json:"deleted_at,omitempty"`
-	Status      FieldStatus `gorm:"column:status;not null;default:'active'" json:"status"`
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	Name         string         `gorm:"type:varchar(120);not null" json:"name"`
+	Description  string         `gorm:"type:text" json:"description"`
+	Type         FieldType      `gorm:"type:varchar(30);not null;index" json:"type"`
+	Location     string         `gorm:"type:varchar(200);not null;index" json:"location"`
+	PricePerHour float64        `gorm:"type:numeric(12,2);not null" json:"price_per_hour"`
+	Facilities   string         `gorm:"type:text" json:"facilities"`
+	Status       FieldStatus    `gorm:"type:varchar(20);not null;default:'ACTIVE';index" json:"status"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+
+	Schedules []Schedule `gorm:"foreignKey:FieldID" json:"schedules,omitempty"`
+	Bookings  []Booking  `gorm:"foreignKey:FieldID" json:"-"`
 }
 
-func (f *Field) IsValid() bool {
+// IsActive menandakan lapangan siap menerima booking.
+func (f *Field) IsActive() bool {
 	return f.Status == FieldStatusActive
 }

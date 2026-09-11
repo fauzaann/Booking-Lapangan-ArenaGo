@@ -1,53 +1,61 @@
+// Package middleware berisi seluruh middleware HTTP: autentikasi, otorisasi,
+// logging, CORS, dan recovery.
 package middleware
 
 import (
-	"net/http"
-
-	"Booking-Lapangan/controllers"
-	"Booking-Lapangan/repository"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"Booking-Lapangan/controllers"
+	"Booking-Lapangan/models"
+	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/jwt"
+	"Booking-Lapangan/pkg/response"
 )
 
-func AuthMiddleware(blacklistTokens ...repository.BlacklistTokenRepository) gin.HandlerFunc {
+// ContextActorKey adalah kunci penyimpanan identitas pemanggil di gin.Context.
+const ContextActorKey = "auth_actor"
+
+// Authenticate memverifikasi header Authorization: Bearer <token>.
+func Authenticate(manager jwt.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := c.GetHeader("Authorization")
-		if token == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"success": false,
-				"message": "Header Authorization dibutuhkan",
-			})
-			c.Abort()
+		header := strings.TrimSpace(c.GetHeader("Authorization"))
+		if header == "" {
+			response.AbortWithError(c, apperror.Unauthorized("authorization header is required"))
 			return
 		}
 
-		if len(blacklistTokens) > 0 && blacklistTokens[0] != nil {
-			isBlacklisted, err := blacklistTokens[0].IsBlacklisted(token)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"success": false,
-					"message": "Terjadi kesalahan internal",
-				})
-				c.Abort()
-				return
-			}
-			if isBlacklisted {
-				c.JSON(http.StatusUnauthorized, gin.H{
-					"success": false,
-					"message": "Token telah diblacklist",
-				})
-				c.Abort()
-				return
-			}
+		parts := strings.Fields(header)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+			response.AbortWithError(c, apperror.Unauthorized("authorization header must use Bearer scheme"))
+			return
 		}
 
-		c.Set("actor", controllers.Actor{ID: 1, Username: "guest", Role: "USER"})
+		claims, err := manager.Verify(parts[1])
+		if err != nil {
+			response.AbortWithError(c, apperror.Unauthorized("invalid or expired token"))
+			return
+		}
+
+		role := models.Role(strings.ToUpper(claims.Role))
+		if !role.Valid() {
+			response.AbortWithError(c, apperror.Unauthorized("token contains an unknown role"))
+			return
+		}
+
+		c.Set(ContextActorKey, controllers.Actor{
+			UserID: claims.UserID,
+			Email:  claims.Email,
+			Role:   role,
+		})
 		c.Next()
 	}
 }
 
+// ActorFrom membaca identitas pemanggil dari context.
 func ActorFrom(c *gin.Context) (controllers.Actor, bool) {
-	value, exists := c.Get("actor")
+	value, exists := c.Get(ContextActorKey)
 	if !exists {
 		return controllers.Actor{}, false
 	}
@@ -55,6 +63,8 @@ func ActorFrom(c *gin.Context) (controllers.Actor, bool) {
 	return actor, ok
 }
 
+// MustActor mengembalikan identitas pemanggil. Selalu dipakai setelah
+// middleware Authenticate sehingga nilainya dijamin ada.
 func MustActor(c *gin.Context) controllers.Actor {
 	actor, _ := ActorFrom(c)
 	return actor

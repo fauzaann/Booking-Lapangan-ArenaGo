@@ -1,0 +1,127 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap");
+@import "tailwindcss";
+
+@theme {
+  /* Colors — Atelier Padel design system */
+  --color-canvas: #fbfbfa;
+  --color-surface: #f5f5f2;
+  --color-surface-raised: #ffffff;
+  --color-border: #e5e5e0;
+  --color-border-dark: rgba(255, 255, 255, 0.1);
+
+  --color-onyx: #14171a;
+  --color-onyx-hover: #1f2429;
+  --color-champagne: #c5a880;
+  --color-champagne-tint: #f5efeb;
+  --color-sage: #2d4b3e;
+  --color-sage-tint: rgba(45, 75, 62, 0.08);
+  --color-azure: #1e3a5f;
+  --color-slate: #8f9499;
+  --color-terracotta: #9e3a3a;
+
+  --color-ink: #14171a;
+  --color-ink-muted: #5c5f62;
+  --color-ink-faint: #8a8d90;
+
+  /* Type */
+  --font-display: "Playfair Display", serif;
+  --font-body: "Plus Jakarta Sans", sans-serif;
+
+  /* Radius */
+  --radius-sm: 0.5rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
+  --radius-2xl: 3rem;
+  --radius-pill: 9999px;
+
+  /* Spacing extras */
+  --spacing-18: 4.5rem;
+  --spacing-safe: env(safe-area-inset-bottom, 0px);
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 9999px;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.glass {
+  background: rgba(251, 251, 250, 0.82);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+}
+
+.glass-dark {
+  background: rgba(20, 23, 26, 0.82);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+}
+
+.shadow-raised {
+  box-shadow:
+    0 8px 24px -4px rgba(20, 23, 26, 0.04),
+    0 2px 6px -1px rgba(20, 23, 26, 0.02);
+}
+
+.shadow-overlay {
+  box-shadow:
+    0 20px 48px -8px rgba(20, 23, 26, 0.08),
+    0 4px 12px -2px rgba(20, 23, 26, 0.03);
+}
+
+.material-symbols-outlined {
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 24;
+  font-size: 20px;
+  line-height: 1;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-onyx);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

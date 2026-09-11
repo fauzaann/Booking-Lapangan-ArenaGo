@@ -1,9 +1,15 @@
+// Package repository berisi seluruh akses data. Controller hanya berinteraksi
+// dengan interface di package ini sehingga mudah di-mock saat unit test dan
+// tidak ada satu pun query yang bocor ke layer handler.
 package repository
 
 import (
 	"context"
+	"errors"
 
 	"gorm.io/gorm"
+
+	"Booking-Lapangan/pkg/apperror"
 )
 
 // Registry menyediakan seluruh repository dalam satu tempat.
@@ -47,6 +53,7 @@ func (r *registry) Atomic(ctx context.Context, fn func(Registry) error) error {
 	})
 }
 
+// ListParams adalah parameter pagination standar.
 type ListParams struct {
 	Page  int
 	Limit int
@@ -70,4 +77,18 @@ func (p ListParams) Normalize() ListParams {
 func (p ListParams) Offset() int {
 	normalized := p.Normalize()
 	return (normalized.Page - 1) * normalized.Limit
+}
+
+// translate memetakan error GORM menjadi error domain aplikasi.
+func translate(err error, notFoundMessage string) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return apperror.NotFound(notFoundMessage)
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return apperror.Conflict("data already exists")
+	}
+	return apperror.Internal("database error", err)
 }

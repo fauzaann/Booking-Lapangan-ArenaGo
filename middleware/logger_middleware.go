@@ -6,7 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"Booking-Lapangan/utils"
+	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/response"
 )
 
 // RequestLogger mencatat setiap request beserta latensi dan status code.
@@ -41,6 +42,6 @@ func RequestLogger() gin.HandlerFunc {
 func Recovery() gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
 		log.Printf("panic recovered: %v", recovered)
-		utils.AbortWithError(c, utils.Internal("internal server error", nil))
+		response.AbortWithError(c, apperror.Internal("internal server error", nil))
 	})
 }
