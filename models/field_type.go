@@ -14,14 +14,7 @@ const (
 
 // FieldTypes mengembalikan seluruh jenis lapangan yang valid.
 func FieldTypes() []FieldType {
-	return []FieldType{
-		FieldTypeFutsal,
-		FieldTypeBadminton,
-		FieldTypeBasket,
-		FieldTypeTennis,
-		FieldTypeMiniSoccer,
-		FieldTypePadel,
-	}
+	return []FieldType{FieldTypePadel}
 }
 
 // Valid memeriksa apakah jenis lapangan dikenal.

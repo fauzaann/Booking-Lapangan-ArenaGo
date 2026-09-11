@@ -61,6 +61,9 @@ func (c *fieldController) Detail(ctx context.Context, id uint) (*dto.FieldRespon
 	if err != nil {
 		return nil, err
 	}
+	if field.Type != models.FieldTypePadel {
+		return nil, apperror.NotFound("field not found")
+	}
 	response := dto.NewFieldResponse(*field)
 	return &response, nil
 }
@@ -78,6 +81,7 @@ func (c *fieldController) Create(ctx context.Context, req dto.CreateFieldRequest
 		Type:         models.FieldType(strings.ToUpper(req.Type)),
 		Location:     strings.TrimSpace(req.Location),
 		PricePerHour: req.PricePerHour,
+		ImageURL:     strings.TrimSpace(req.ImageURL),
 		Facilities:   dto.EncodeFacilities(req.Facilities),
 		Status:       status,
 	}
@@ -111,6 +115,9 @@ func (c *fieldController) Update(ctx context.Context, id uint, req dto.UpdateFie
 	if err != nil {
 		return nil, err
 	}
+	if field.Type != models.FieldTypePadel {
+		return nil, apperror.NotFound("field not found")
+	}
 
 	if req.Name != nil {
 		field.Name = strings.TrimSpace(*req.Name)
@@ -126,6 +133,9 @@ func (c *fieldController) Update(ctx context.Context, id uint, req dto.UpdateFie
 	}
 	if req.PricePerHour != nil {
 		field.PricePerHour = *req.PricePerHour
+	}
+	if req.ImageURL != nil {
+		field.ImageURL = strings.TrimSpace(*req.ImageURL)
 	}
 	if req.Status != nil {
 		field.Status = models.FieldStatus(strings.ToUpper(*req.Status))

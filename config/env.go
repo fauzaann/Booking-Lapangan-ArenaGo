@@ -14,11 +14,12 @@ import (
 
 // Config adalah kumpulan konfigurasi aplikasi.
 type Config struct {
-	App      AppConfig
-	Database DatabaseConfig
-	JWT      JWTConfig
-	Xendit   XenditConfig
-	Booking  BookingConfig
+	App        AppConfig
+	Database   DatabaseConfig
+	JWT        JWTConfig
+	Xendit     XenditConfig
+	OpenRouter OpenRouterConfig
+	Booking    BookingConfig
 }
 
 // AppConfig berisi konfigurasi umum aplikasi.
@@ -79,6 +80,13 @@ type XenditConfig struct {
 	FailureRedirectURL string
 }
 
+// OpenRouterConfig berisi konfigurasi provider chatbot.
+type OpenRouterConfig struct {
+	APIKey  string
+	BaseURL string
+	Model   string
+}
+
 // Load membaca file .env (jika ada) lalu environment variable.
 func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
@@ -116,6 +124,11 @@ func Load() (*Config, error) {
 			InvoiceDuration:    getEnvInt("XENDIT_INVOICE_DURATION", 3600),
 			SuccessRedirectURL: strings.TrimSuffix(frontendURL, "/") + "/payment/success",
 			FailureRedirectURL: strings.TrimSuffix(frontendURL, "/") + "/payment/failed",
+		},
+		OpenRouter: OpenRouterConfig{
+			APIKey:  getEnv("OPENROUTER_API_KEY", ""),
+			BaseURL: getEnv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+			Model:   getEnv("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
 		},
 		Booking: BookingConfig{
 			MinHours:       getEnvInt("BOOKING_MIN_HOUR", 1),

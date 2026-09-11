@@ -5,29 +5,55 @@ import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
 import BookingSummary from "../components/booking/BookingSummary";
-import { courts, upcomingDays, sampleBooking } from "../lib/mockData";
+import { sampleBooking } from "../lib/mockData";
+import { api } from "../lib/api";
+import { formatDateInput } from "../lib/format";
 
 export default function Confirmation() {
   const { state } = useLocation();
   const navigate = useNavigate();
 
-  const booking = state
+  const booking = state?.court
     ? {
         ...sampleBooking,
-        court: courts.find((c) => c.id === state.courtId) ?? sampleBooking.court,
-        date: upcomingDays[state.dayIndex] ?? sampleBooking.date,
+        court: state.court,
+        date: state.date,
         slots: state.slots?.length ? state.slots : sampleBooking.slots,
+        totalOverride: state.court.pricePerHour * (state.slots?.length || sampleBooking.slots.length),
       }
     : sampleBooking;
 
   const [form, setForm] = useState(booking.customer);
-  const [rentals, setRentals] = useState(booking.rental);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  const activeBooking = { ...booking, customer: form, rental: rentals };
+  const activeBooking = { ...booking, customer: form, rental: { rackets: 0, balls: 0 } };
+
+  async function createBooking() {
+    setSubmitting(true);
+    setError("");
+    try {
+      const result = await api.createBooking({
+        field_id: Number(booking.court.id),
+        booking_date: formatDateInput(booking.date),
+        start_time: booking.slots[0],
+        end_time: addHour(booking.slots[booking.slots.length - 1]),
+      });
+      localStorage.setItem("arenago:pending-payment", JSON.stringify({
+        bookingId: result.data.booking_id,
+        bookingCode: result.data.booking_code,
+      }));
+      navigate("/pembayaran", { state: { booking: activeBooking, created: result.data } });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="px-5 py-8 sm:px-8 lg:px-16">
@@ -70,26 +96,6 @@ export default function Confirmation() {
             </div>
           </Card>
 
-          <Card>
-            <h2 className="mb-4 font-display text-xl">Sewa Tambahan</h2>
-            <div className="space-y-4">
-              <RentalRow
-                icon="sports_tennis"
-                label="Raket Padel"
-                sub="IDR 75.000 / raket"
-                value={rentals.rackets}
-                onChange={(v) => setRentals((p) => ({ ...p, rackets: v }))}
-              />
-              <RentalRow
-                icon="fiber_manual_record"
-                label="Bola Padel"
-                sub="IDR 35.000 / tube"
-                value={rentals.balls}
-                onChange={(v) => setRentals((p) => ({ ...p, balls: v }))}
-              />
-            </div>
-          </Card>
-
           <Card className="border-champagne/40 bg-champagne-tint/40">
             <div className="flex gap-3">
               <Icon name="info" className="mt-0.5 shrink-0 text-champagne" />
@@ -104,13 +110,9 @@ export default function Confirmation() {
         <div className="lg:sticky lg:top-24 lg:self-start">
           <Card>
             <BookingSummary booking={activeBooking} />
-            <Button
-              className="mt-6 w-full"
-              onClick={() =>
-                navigate("/pembayaran", { state: { booking: activeBooking } })
-              }
-            >
-              Lanjut ke Pembayaran
+            {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+            <Button className="mt-6 w-full" onClick={createBooking} disabled={submitting}>
+              {submitting ? "Membuat booking..." : "Lanjut ke Pembayaran"}
             </Button>
           </Card>
         </div>
@@ -119,35 +121,8 @@ export default function Confirmation() {
   );
 }
 
-function RentalRow({ icon, label, sub, value, onChange }) {
-  return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface">
-          <Icon name={icon} size={18} />
-        </span>
-        <div>
-          <p className="text-sm font-medium">{label}</p>
-          <p className="text-xs text-ink-faint">{sub}</p>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => onChange(Math.max(0, value - 1))}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-border hover:border-onyx"
-          aria-label={`Kurangi ${label}`}
-        >
-          <Icon name="remove" size={16} />
-        </button>
-        <span className="w-4 text-center text-sm font-medium">{value}</span>
-        <button
-          onClick={() => onChange(value + 1)}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-border hover:border-onyx"
-          aria-label={`Tambah ${label}`}
-        >
-          <Icon name="add" size={16} />
-        </button>
-      </div>
-    </div>
-  );
+function addHour(time) {
+  const [hour, minute] = time.split(":").map(Number);
+  return `${String((hour + 1) % 24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
+

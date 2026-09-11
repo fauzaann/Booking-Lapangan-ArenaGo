@@ -1,24 +1,39 @@
 import { useState } from "react";
 import Icon from "../ui/Icon";
 import { conciergeSeedMessages, conciergeQuickActions } from "../../lib/mockData";
+import { api } from "../../lib/api";
 
 export default function ConciergeWidget() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState(conciergeSeedMessages);
   const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function sendMessage(text) {
+  async function sendMessage(text) {
     const value = text ?? draft;
     if (!value.trim()) return;
+    const history = messages.map((message) => ({
+      role: message.from === "user" ? "user" : "assistant",
+      content: message.text,
+    }));
     setMessages((prev) => [...prev, { from: "user", text: value }]);
     setDraft("");
+    setLoading(true);
+    try {
+      const result = await api.assistantChat({ message: value, history });
+      setMessages((prev) => [...prev, { from: "assistant", text: result.data.reply }]);
+    } catch (error) {
+      setMessages((prev) => [...prev, { from: "assistant", text: error.message || "Assistant sedang tidak tersedia." }]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <>
       <button
         onClick={() => setOpen((v) => !v)}
-        aria-label="Buka Atelier Assistant"
+        aria-label="Buka ArenaGO Assistant"
         className="fixed bottom-24 right-5 z-[120] flex h-14 w-14 items-center justify-center rounded-full bg-onyx text-canvas shadow-overlay ring-2 ring-champagne/60 transition-transform duration-150 hover:scale-105 md:bottom-7 md:right-7"
       >
         <Icon name={open ? "close" : "auto_awesome"} size={24} />
@@ -31,7 +46,7 @@ export default function ConciergeWidget() {
               <Icon name="auto_awesome" size={16} />
             </span>
             <div>
-              <p className="text-sm font-semibold leading-none">Atelier Assistant</p>
+              <p className="text-sm font-semibold leading-none">ArenaGO Assistant</p>
               <p className="mt-1 text-xs text-ink-faint">Concierge padel Anda</p>
             </div>
           </div>
@@ -53,6 +68,7 @@ export default function ConciergeWidget() {
                 </div>
               </div>
             ))}
+            {loading && <div className="max-w-[80%] rounded-lg border border-border bg-surface-raised px-4 py-2.5 text-sm text-ink-faint">Sedang berpikir...</div>}
           </div>
 
           <div className="border-t border-border px-5 py-3">
@@ -78,10 +94,12 @@ export default function ConciergeWidget() {
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Tulis pesan..."
+                disabled={loading}
                 className="h-11 flex-1 rounded-full border border-border bg-surface-raised px-4 text-sm focus:border-onyx focus:outline-none"
               />
               <button
                 type="submit"
+                disabled={loading}
                 aria-label="Kirim"
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-onyx text-canvas"
               >

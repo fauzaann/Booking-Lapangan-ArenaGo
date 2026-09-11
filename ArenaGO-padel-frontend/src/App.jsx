@@ -7,6 +7,7 @@ import Explore from "./pages/Explore";
 import SelectSlot from "./pages/SelectSlot";
 import Confirmation from "./pages/Confirmation";
 import Payment from "./pages/Payment";
+import PaymentResult from "./pages/PaymentResult";
 import ETicket from "./pages/ETicket";
 import MyBookings from "./pages/MyBookings";
 import Profile from "./pages/Profile";
@@ -47,6 +48,14 @@ export default function App() {
                   <Payment />
                 </RequireAuth>
               }
+            />
+            <Route
+              path="/payment/success"
+              element={<RequireAuth><PaymentResult /></RequireAuth>}
+            />
+            <Route
+              path="/payment/failed"
+              element={<RequireAuth><PaymentResult /></RequireAuth>}
             />
             <Route
               path="/e-tiket"

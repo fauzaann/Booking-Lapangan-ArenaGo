@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -188,7 +189,7 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 	})
 	if err != nil {
 		c.rollbackBooking(ctx, booking, payment)
-		return nil, apperror.BadGateway("failed to create payment invoice", err)
+		return nil, paymentInvoiceError(err)
 	}
 
 	expiredAt := invoice.ExpiryDate
@@ -225,6 +226,19 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 		PaymentStatus: string(payment.Status),
 		ExpiredAt:     payment.ExpiredAt,
 	}, nil
+}
+
+func paymentInvoiceError(err error) *apperror.AppError {
+	var apiErr *xendit.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.StatusCode {
+		case 401, 403:
+			return apperror.BadGateway("Xendit authentication failed; check XENDIT_SECRET_KEY", err)
+		case 400:
+			return apperror.BadGateway("Xendit rejected the invoice request; check payment configuration", err)
+		}
+	}
+	return apperror.BadGateway("Xendit payment service is unavailable", err)
 }
 
 func (c *bookingController) List(ctx context.Context, actor Actor, query dto.BookingFilterQuery) ([]dto.BookingResponse, int64, error) {

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import Icon from "../components/ui/Icon";
 import Input from "../components/ui/Input";
 import Button from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
@@ -11,7 +10,6 @@ export default function Login() {
   const location = useLocation();
   const redirectTo = location.state?.from?.pathname || "/";
 
-  const [role, setRole] = useState("customer");
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
 
@@ -26,8 +24,12 @@ export default function Login() {
       return;
     }
     setError("");
-    await login({ role });
-    navigate(redirectTo, { replace: true });
+    try {
+      await login(form);
+      navigate(redirectTo, { replace: true });
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   return (
@@ -80,38 +82,6 @@ export default function Login() {
           {status === "loading" ? "Memproses..." : "Masuk"}
         </Button>
       </form>
-
-      <div className="my-6 flex items-center gap-3 text-xs text-ink-faint">
-        <span className="h-px flex-1 bg-border" />
-        Demo cepat
-        <span className="h-px flex-1 bg-border" />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <button
-          type="button"
-          onClick={() => setRole("customer")}
-          className={`flex items-center justify-center gap-2 rounded-md border px-4 py-2.5 text-sm font-medium transition-colors duration-150 ${
-            role === "customer" ? "border-onyx bg-onyx text-canvas" : "border-border text-ink-muted"
-          }`}
-        >
-          <Icon name="person" size={16} />
-          Pelanggan
-        </button>
-        <button
-          type="button"
-          onClick={() => setRole("admin")}
-          className={`flex items-center justify-center gap-2 rounded-md border px-4 py-2.5 text-sm font-medium transition-colors duration-150 ${
-            role === "admin" ? "border-onyx bg-onyx text-canvas" : "border-border text-ink-muted"
-          }`}
-        >
-          <Icon name="admin_panel_settings" size={16} />
-          Admin
-        </button>
-      </div>
-      <p className="mt-2 text-center text-[11px] text-ink-faint">
-        Pilih role untuk demo tampilan — password tetap wajib diisi (simulasi UI).
-      </p>
 
       <p className="mt-8 text-center text-sm text-ink-muted">
         Belum punya akun?{" "}

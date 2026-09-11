@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, Link } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import Icon from "../components/ui/Icon";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
@@ -12,12 +12,12 @@ const COUNTDOWN_SECONDS = 15 * 60;
 
 export default function Payment() {
   const { state } = useLocation();
-  const navigate = useNavigate();
   const booking = state?.booking ?? sampleBooking;
+  const created = state?.created;
 
   const [method, setMethod] = useState("qris");
   const [seconds, setSeconds] = useState(COUNTDOWN_SECONDS);
-  const [status, setStatus] = useState("idle"); // idle | processing | success
+  const [status] = useState("idle");
 
   useEffect(() => {
     if (status !== "idle") return;
@@ -30,13 +30,12 @@ export default function Payment() {
   const ss = String(seconds % 60).padStart(2, "0");
 
   function pay() {
-    setStatus("processing");
-    setTimeout(() => {
-      setStatus("success");
-      setTimeout(() => {
-        navigate("/e-tiket", { state: { booking, method } });
-      }, 900);
-    }, 1400);
+    if (!created?.payment_url) return;
+    localStorage.setItem("arenago:pending-payment", JSON.stringify({
+      bookingId: created.booking_id,
+      bookingCode: created.booking_code,
+    }));
+    window.location.assign(created.payment_url);
   }
 
   return (
@@ -116,14 +115,14 @@ export default function Payment() {
             <Button
               className="mt-6 w-full"
               onClick={pay}
-              disabled={status !== "idle"}
+              disabled={!created?.payment_url}
             >
-              {status === "idle" && `Bayar ${formatIDR(total)}`}
+              {status === "idle" && (created?.payment_url ? `Bayar ${formatIDR(total)}` : "Invoice belum tersedia")}
               {status === "processing" && "Memproses..."}
               {status === "success" && "Pembayaran Berhasil"}
             </Button>
             <p className="mt-3 text-center text-[11px] text-ink-faint">
-              Simulasi tampilan pembayaran — tidak ada transaksi nyata yang diproses.
+              Anda akan diarahkan ke halaman pembayaran Xendit untuk menyelesaikan invoice.
             </p>
           </Card>
         </div>

@@ -80,7 +80,7 @@ func (r *fieldRepository) FindDetailByID(ctx context.Context, id uint) (*models.
 func (r *fieldRepository) FindAll(ctx context.Context, filter FieldFilter) ([]models.Field, int64, error) {
 	filter.ListParams = filter.ListParams.Normalize()
 
-	query := r.db.WithContext(ctx).Model(&models.Field{})
+	query := r.db.WithContext(ctx).Model(&models.Field{}).Where("type = ?", string(models.FieldTypePadel))
 
 	if filter.Type != "" {
 		query = query.Where("type = ?", filter.Type)
@@ -119,6 +119,6 @@ func (r *fieldRepository) FindAll(ctx context.Context, filter FieldFilter) ([]mo
 
 func (r *fieldRepository) Count(ctx context.Context) (int64, error) {
 	var total int64
-	err := r.db.WithContext(ctx).Model(&models.Field{}).Count(&total).Error
+	err := r.db.WithContext(ctx).Model(&models.Field{}).Where("type = ?", string(models.FieldTypePadel)).Count(&total).Error
 	return total, translate(err, "field not found")
 }

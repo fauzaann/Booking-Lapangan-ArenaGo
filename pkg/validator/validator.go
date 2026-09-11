@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	playground "github.com/go-playground/validator/v10"
+
+	"Booking-Lapangan/pkg/timeutil"
 )
 
 // Validator adalah wrapper tipis di atas go-playground/validator.
@@ -25,6 +27,17 @@ func New() *Validator {
 			return ""
 		}
 		return name
+	})
+	v.RegisterValidation("dateonly", func(field playground.FieldLevel) bool {
+		_, err := timeutil.ParseDate(field.Field().String())
+		return err == nil
+	})
+	v.RegisterValidation("clock", func(field playground.FieldLevel) bool {
+		return timeutil.ValidClock(field.Field().String())
+	})
+	v.RegisterValidation("notpast", func(field playground.FieldLevel) bool {
+		value, err := timeutil.ParseDate(field.Field().String())
+		return err == nil && !value.Before(timeutil.Today())
 	})
 	return &Validator{validate: v}
 }

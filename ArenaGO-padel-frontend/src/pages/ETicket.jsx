@@ -6,6 +6,7 @@ import StatusBadge from "../components/ui/StatusBadge";
 import { sampleBooking } from "../lib/mockData";
 import { formatDateLong, formatIDR } from "../lib/format";
 import { bookingPriceBreakdown } from "../lib/mockData";
+import BrandLogo from "../components/ui/BrandLogo";
 
 export default function ETicket() {
   const { state } = useLocation();
@@ -26,7 +27,7 @@ export default function ETicket() {
       <Card className="w-full max-w-sm overflow-hidden !p-0">
         <div className="bg-onyx px-6 py-5 text-canvas">
           <div className="mb-1 flex items-center justify-between">
-            <span className="font-display text-lg">Atelier Padel</span>
+            <span className="text-canvas"><BrandLogo compact /></span>
             <StatusBadge status="confirmed" />
           </div>
           <p className="text-xs text-canvas/60">Booking ID · {booking.id}</p>

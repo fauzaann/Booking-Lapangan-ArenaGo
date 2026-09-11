@@ -2,6 +2,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import Icon from "./Icon";
 import { useAuth } from "../../context/AuthContext";
+import BrandLogo from "./BrandLogo";
 
 function getNavItems({ isAuthenticated, isAdmin }) {
   const items = [{ to: "/", label: "Eksplor", icon: "sports_tennis" }];
@@ -31,17 +32,7 @@ export default function Navbar() {
     <header className="glass sticky top-0 z-50 border-b border-border">
       <div className="mx-auto flex h-18 max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-16">
         <Link to="/" className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-onyx text-canvas">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M12 2C7 2 4 6 4 11c0 4 2 6 4 8 1.2 1.2 2.6 2 4 2s2.8-.8 4-2c2-2 4-4 4-8 0-5-3-9-8-9Z"
-                stroke="currentColor"
-                strokeWidth="1.6"
-              />
-              <path d="M12 6.5v11" stroke="currentColor" strokeWidth="1.6" />
-            </svg>
-          </span>
-          <span className="font-display text-lg leading-none">Atelier Padel</span>
+          <BrandLogo />
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">

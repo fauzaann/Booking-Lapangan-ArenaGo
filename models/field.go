@@ -28,6 +28,7 @@ type Field struct {
 	Type         FieldType      `gorm:"type:varchar(30);not null;index" json:"type"`
 	Location     string         `gorm:"type:varchar(200);not null;index" json:"location"`
 	PricePerHour float64        `gorm:"type:numeric(12,2);not null" json:"price_per_hour"`
+	ImageURL     string         `gorm:"type:varchar(500)" json:"image_url"`
 	Facilities   string         `gorm:"type:text" json:"facilities"`
 	Status       FieldStatus    `gorm:"type:varchar(20);not null;default:'ACTIVE';index" json:"status"`
 	CreatedAt    time.Time      `json:"created_at"`

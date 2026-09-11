@@ -1,20 +1,44 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import Icon from "../components/ui/Icon";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import TimeSlotGrid from "../components/booking/TimeSlotGrid";
-import { courts, buildDaySlots, upcomingDays } from "../lib/mockData";
-import { formatDateShort, formatIDR } from "../lib/format";
+import { upcomingDays } from "../lib/mockData";
+import { api } from "../lib/api";
+import { formatDateInput, formatDateShort, formatIDR } from "../lib/format";
 
 export default function SelectSlot() {
   const { courtId } = useParams();
   const navigate = useNavigate();
-  const court = courts.find((c) => c.id === courtId) ?? courts[0];
+  const [court, setCourt] = useState(null);
+  const [availability, setAvailability] = useState(null);
+  const [error, setError] = useState("");
 
   const [dayIndex, setDayIndex] = useState(0);
   const [selected, setSelected] = useState([]);
-  const slots = useMemo(() => buildDaySlots(), [dayIndex]);
+  const selectedDate = upcomingDays[dayIndex];
+  const dateValue = formatDateInput(selectedDate);
+
+  useEffect(() => {
+    setError("");
+    Promise.all([api.field(courtId), api.availability(courtId, dateValue)])
+      .then(([fieldResult, availabilityResult]) => {
+        setCourt(fieldResult.data);
+        setAvailability(availabilityResult.data);
+      })
+      .catch((err) => setError(err.message));
+  }, [courtId, dateValue]);
+
+  const slots = useMemo(
+    () => (availability?.slots || []).map((slot) => ({
+      time: slot.start_time,
+      end: slot.end_time,
+      status: slot.available ? "available" : "booked",
+      vip: false,
+    })),
+    [availability]
+  );
 
   function toggleSlot(time) {
     setSelected((prev) =>
@@ -22,13 +46,16 @@ export default function SelectSlot() {
     );
   }
 
-  const total = selected.length * court.pricePerHour;
+  const total = selected.length * (court?.pricePerHour || 0);
 
   function goToConfirmation() {
     navigate("/konfirmasi", {
-      state: { courtId: court.id, dayIndex, slots: selected },
+      state: { court, date: selectedDate, slots: selected },
     });
   }
+
+  if (error) return <div className="px-5 py-20 text-center text-sm text-red-600">{error}</div>;
+  if (!court) return <div className="px-5 py-20 text-center text-sm text-ink-muted">Memuat lapangan...</div>;
 
   return (
     <div className="px-5 py-8 sm:px-8 lg:px-16">
@@ -82,7 +109,19 @@ export default function SelectSlot() {
               </span>
             </div>
           </div>
-          <TimeSlotGrid slots={slots} selected={selected} onToggle={toggleSlot} />
+          {availability && !availability.is_open ? (
+            <div className="rounded-lg border border-dashed border-border bg-surface-raised px-5 py-10 text-center">
+              <Icon name="event_busy" size={28} className="mb-3 text-ink-faint" />
+              <p className="mb-1 font-display text-lg">Lapangan tutup pada tanggal ini</p>
+              <p className="text-sm text-ink-muted">Silakan pilih tanggal lain untuk melihat slot yang tersedia.</p>
+            </div>
+          ) : slots.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border bg-surface-raised px-5 py-10 text-center text-sm text-ink-muted">
+              Belum ada slot yang tersedia untuk tanggal ini.
+            </div>
+          ) : (
+            <TimeSlotGrid slots={slots} selected={selected} onToggle={toggleSlot} />
+          )}
         </div>
 
         <div className="lg:sticky lg:top-24 lg:self-start">

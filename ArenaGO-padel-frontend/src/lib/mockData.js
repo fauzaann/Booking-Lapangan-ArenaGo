@@ -109,6 +109,12 @@ export const sampleBooking = {
 
 export function bookingPriceBreakdown(booking) {
   const courtTotal = booking.court.pricePerHour * booking.slots.length;
+  if (booking.totalOverride != null) {
+    return [
+      { label: `Sewa lapangan (${booking.slots.length} jam)`, amount: booking.totalOverride },
+      { label: "__total__", amount: booking.totalOverride },
+    ];
+  }
   const racketRental = booking.rental.rackets * 75000;
   const ballRental = booking.rental.balls * 35000;
   const serviceFee = 15000;
@@ -222,7 +228,7 @@ export const adminStats = [
 export const conciergeSeedMessages = [
   {
     from: "assistant",
-    text: "Selamat datang di Atelier Assistant. Ada yang bisa saya bantu untuk jadwal main padel Anda hari ini?",
+    text: "Selamat datang di ArenaGO Assistant. Ada yang bisa saya bantu untuk jadwal main padel Anda hari ini?",
   },
 ];
 
@@ -249,7 +255,7 @@ export const mockUsers = {
   admin: {
     id: "usr-9001",
     name: "Sarah Wijaya",
-    email: "sarah.wijaya@atelierpadel.com",
+    email: "sarah.wijaya@arenago.com",
     phone: "+62 813-2211-0099",
     role: "admin",
     joinedAt: "2025-01-15",

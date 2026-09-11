@@ -18,15 +18,16 @@ import (
 // Dependencies adalah seluruh komponen yang dibutuhkan router.
 // Semua di-inject dari main.go (dependency injection).
 type Dependencies struct {
-	Config   *config.Config
-	JWT      jwt.Manager
-	Auth     *handler.AuthHandler
-	User     *handler.UserHandler
-	Field    *handler.FieldHandler
-	Schedule *handler.ScheduleHandler
-	Booking  *handler.BookingHandler
-	Payment  *handler.PaymentHandler
-	Admin    *handler.AdminHandler
+	Config    *config.Config
+	JWT       jwt.Manager
+	Auth      *handler.AuthHandler
+	User      *handler.UserHandler
+	Field     *handler.FieldHandler
+	Schedule  *handler.ScheduleHandler
+	Booking   *handler.BookingHandler
+	Payment   *handler.PaymentHandler
+	Assistant *handler.AssistantHandler
+	Admin     *handler.AdminHandler
 }
 
 // New menyusun seluruh route aplikasi.
@@ -91,6 +92,9 @@ func New(deps Dependencies) *gin.Engine {
 	{
 		payments.POST("/webhook", deps.Payment.Webhook)
 	}
+
+	// ---------- Assistant ----------
+	v1.POST("/assistant/chat", deps.Assistant.Chat)
 
 	// ---------- Admin ----------
 	admin := v1.Group("/admin", authenticated, adminOnly)

@@ -81,6 +81,7 @@ func main() {
 	validate := validator.New()
 	tokens := jwt.NewManager(cfg.JWT.Secret, cfg.JWT.Duration)
 	invoices := config.NewXenditClient(cfg)
+	assistant := config.NewOpenRouterClient(cfg)
 
 	authController := controllers.NewAuthController(uow.User(), tokens)
 	fieldController := controllers.NewFieldController(uow)
@@ -96,15 +97,16 @@ func main() {
 	adminController := controllers.NewAdminController(uow)
 
 	engine := router.New(router.Dependencies{
-		Config:   cfg,
-		JWT:      tokens,
-		Auth:     handler.NewAuthHandler(authController, validate),
-		User:     handler.NewUserHandler(authController, adminController, validate),
-		Field:    handler.NewFieldHandler(fieldController, validate),
-		Schedule: handler.NewScheduleHandler(fieldController, validate),
-		Booking:  handler.NewBookingHandler(bookingController, validate),
-		Payment:  handler.NewPaymentHandler(paymentController, validate),
-		Admin:    handler.NewAdminHandler(adminController, validate),
+		Config:    cfg,
+		JWT:       tokens,
+		Auth:      handler.NewAuthHandler(authController, validate),
+		User:      handler.NewUserHandler(authController, adminController, validate),
+		Field:     handler.NewFieldHandler(fieldController, validate),
+		Schedule:  handler.NewScheduleHandler(fieldController, validate),
+		Booking:   handler.NewBookingHandler(bookingController, validate),
+		Payment:   handler.NewPaymentHandler(paymentController, validate),
+		Assistant: handler.NewAssistantHandler(controllers.NewAssistantController(assistant), validate),
+		Admin:     handler.NewAdminHandler(adminController, validate),
 	})
 
 	server := &http.Server{

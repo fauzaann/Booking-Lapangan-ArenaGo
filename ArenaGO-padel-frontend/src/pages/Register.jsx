@@ -28,8 +28,12 @@ export default function Register() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!validate()) return;
-    await register(form);
-    navigate("/", { replace: true });
+    try {
+      await register(form);
+      navigate("/", { replace: true });
+    } catch (err) {
+      setErrors({ form: err.message });
+    }
   }
 
   return (
@@ -42,6 +46,7 @@ export default function Register() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {errors.form && <p className="text-sm text-red-600">{errors.form}</p>}
         <Input
           label="Nama Lengkap"
           placeholder="Nama Anda"

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Icon from "../components/ui/Icon";
 import Tabs from "../components/ui/Tabs";
 import CourtCard from "../components/booking/CourtCard";
-import { courts } from "../lib/mockData";
+import { api } from "../lib/api";
 
 const LOCATIONS = [
   { value: "all", label: "Semua Kota" },
@@ -15,12 +15,16 @@ export default function Explore() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Simulate a brief network fetch whenever the location filter changes,
-  // including the very first load. Pure UI state — no real request.
+  const [courts, setCourts] = useState([]);
+  const [error, setError] = useState("");
+
   useEffect(() => {
     setLoading(true);
-    const timer = setTimeout(() => setLoading(false), 500);
-    return () => clearTimeout(timer);
+    setError("");
+    api.fields(location === "all" ? {} : { location })
+      .then((result) => setCourts(result.data))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
   }, [location]);
 
   const filtered = useMemo(() => {
@@ -31,7 +35,7 @@ export default function Explore() {
         !query || c.name.toLowerCase().includes(query.toLowerCase());
       return matchLocation && matchQuery;
     });
-  }, [location, query]);
+  }, [courts, location, query]);
 
   return (
     <div className="px-5 py-8 sm:px-8 lg:px-16">
@@ -69,7 +73,9 @@ export default function Explore() {
         />
       </section>
 
-      {loading ? (
+      {error ? (
+        <div className="rounded-lg border border-dashed border-border py-20 text-center text-sm text-red-600">{error}</div>
+      ) : loading ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <div

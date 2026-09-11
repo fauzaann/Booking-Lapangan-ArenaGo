@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { mockUsers } from "../lib/mockData";
+import { api, clearSession, saveSession } from "../lib/api";
 
-const STORAGE_KEY = "atelier-padel:session";
+const STORAGE_KEY = "arenago:session";
 
 const AuthContext = createContext(null);
 
@@ -21,37 +21,28 @@ export function AuthProvider({ children }) {
     else localStorage.removeItem(STORAGE_KEY);
   }, [user]);
 
-  // NOTE: these are mock, frontend-only implementations. Replace the body
-  // of each function with a real call to your RBAC backend — the shape of
-  // `user` (id, name, email, phone, role) is kept generic on purpose.
-  function login({ role = "customer" } = {}) {
-    return new Promise((resolve) => {
-      setStatus("loading");
-      setTimeout(() => {
-        setUser(mockUsers[role] ?? mockUsers.customer);
-        setStatus("idle");
-        resolve(mockUsers[role] ?? mockUsers.customer);
-      }, 700);
-    });
+  async function login(credentials) {
+    setStatus("loading");
+    try {
+      const result = await api.login(credentials);
+      saveSession(result.data);
+      setUser(result.data.user);
+      return result.data.user;
+    } finally {
+      setStatus("idle");
+    }
   }
 
-  function register({ name, email, phone }) {
-    return new Promise((resolve) => {
-      setStatus("loading");
-      setTimeout(() => {
-        const newUser = {
-          id: `usr-${Math.floor(Math.random() * 9000 + 1000)}`,
-          name,
-          email,
-          phone,
-          role: "customer",
-          joinedAt: new Date().toISOString().slice(0, 10),
-        };
-        setUser(newUser);
-        setStatus("idle");
-        resolve(newUser);
-      }, 700);
-    });
+  async function register(credentials) {
+    setStatus("loading");
+    try {
+      const result = await api.register(credentials);
+      saveSession(result.data);
+      setUser(result.data.user);
+      return result.data.user;
+    } finally {
+      setStatus("idle");
+    }
   }
 
   function updateProfile(partial) {
@@ -59,6 +50,7 @@ export function AuthProvider({ children }) {
   }
 
   function logout() {
+    clearSession();
     setUser(null);
   }
 

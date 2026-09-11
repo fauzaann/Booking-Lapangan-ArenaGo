@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
 import Icon from "../components/ui/Icon";
 import Card from "../components/ui/Card";
 import StatusBadge from "../components/ui/StatusBadge";
 import Button from "../components/ui/Button";
-import { myBookings } from "../lib/mockData";
+import { api } from "../lib/api";
 import { formatIDR } from "../lib/format";
 
 const STATUS_MAP = {
@@ -19,12 +20,23 @@ const STATUS_LABEL = {
 };
 
 export default function MyBookings() {
+  const [bookings, setBookings] = useState([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.bookings({ page: "1", limit: "50" })
+      .then((result) => setBookings(result.data.map(mapBooking)))
+      .catch((err) => setError(err.message));
+  }, []);
+
   return (
     <div className="px-5 py-8 sm:px-8 lg:px-16">
       <h1 className="mb-2 font-display text-3xl sm:text-4xl">Riwayat Booking</h1>
       <p className="mb-8 text-ink-muted">Semua reservasi lapangan yang pernah Anda buat.</p>
 
-      {myBookings.length === 0 ? (
+      {error ? (
+        <div className="rounded-lg border border-dashed border-border py-20 text-center text-sm text-red-600">{error}</div>
+      ) : bookings.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-20 text-center">
           <Icon name="event_busy" size={32} className="mb-3 text-ink-faint" />
           <p className="mb-1 font-display text-xl">Belum ada booking</p>
@@ -35,7 +47,7 @@ export default function MyBookings() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {myBookings.map((b) => (
+          {bookings.map((b) => (
             <Card key={b.id} hover>
               <div className="mb-3 flex items-start justify-between">
                 <div>
@@ -85,6 +97,23 @@ export default function MyBookings() {
       )}
     </div>
   );
+}
+
+function mapBooking(booking) {
+  return {
+    id: booking.booking_code,
+    backendId: booking.id,
+    court: {
+      id: String(booking.field_id),
+      name: booking.field_name || `Lapangan #${booking.field_id}`,
+      location: "",
+      pricePerHour: booking.items?.[0]?.price || booking.total_price / Math.max(booking.duration, 1),
+    },
+    date: booking.booking_date,
+    slots: [booking.start_time, booking.end_time],
+    status: booking.status.toLowerCase(),
+    total: booking.total_price,
+  };
 }
 
 function sampleBookingFrom(b) {

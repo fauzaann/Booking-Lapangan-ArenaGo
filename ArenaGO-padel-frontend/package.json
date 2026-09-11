@@ -1,5 +1,5 @@
 {
-  "name": "atelier-padel",
+  "name": "arenago-padel",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:e2e": "node ../scripts/smoke-e2e.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

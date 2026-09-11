@@ -10,9 +10,10 @@ import (
 type CreateFieldRequest struct {
 	Name         string            `json:"name" validate:"required,min=3,max=120"`
 	Description  string            `json:"description" validate:"max=1000"`
-	Type         string            `json:"type" validate:"required,oneof=FUTSAL BADMINTON BASKET TENNIS MINI_SOCCER"`
+	Type         string            `json:"type" validate:"required,oneof=PADEL"`
 	Location     string            `json:"location" validate:"required,min=3,max=200"`
 	PricePerHour float64           `json:"price_per_hour" validate:"required,gt=0"`
+	ImageURL     string            `json:"image_url" validate:"omitempty,url,max=500"`
 	Status       string            `json:"status" validate:"omitempty,oneof=ACTIVE INACTIVE MAINTENANCE"`
 	Facilities   []string          `json:"facilities" validate:"omitempty,dive,max=50"`
 	Schedules    []ScheduleRequest `json:"schedules" validate:"omitempty,dive"`
@@ -23,9 +24,10 @@ type CreateFieldRequest struct {
 type UpdateFieldRequest struct {
 	Name         *string   `json:"name" validate:"omitempty,min=3,max=120"`
 	Description  *string   `json:"description" validate:"omitempty,max=1000"`
-	Type         *string   `json:"type" validate:"omitempty,oneof=FUTSAL BADMINTON BASKET TENNIS MINI_SOCCER"`
+	Type         *string   `json:"type" validate:"omitempty,oneof=PADEL"`
 	Location     *string   `json:"location" validate:"omitempty,min=3,max=200"`
 	PricePerHour *float64  `json:"price_per_hour" validate:"omitempty,gt=0"`
+	ImageURL     *string   `json:"image_url" validate:"omitempty,url,max=500"`
 	Status       *string   `json:"status" validate:"omitempty,oneof=ACTIVE INACTIVE MAINTENANCE"`
 	Facilities   *[]string `json:"facilities" validate:"omitempty,dive,max=50"`
 }
@@ -72,6 +74,7 @@ type FieldResponse struct {
 	Type         string             `json:"type"`
 	Location     string             `json:"location"`
 	PricePerHour float64            `json:"price_per_hour"`
+	ImageURL     string             `json:"image_url,omitempty"`
 	Facilities   []string           `json:"facilities"`
 	Status       string             `json:"status"`
 	Schedules    []ScheduleResponse `json:"schedules,omitempty"`
@@ -155,6 +158,7 @@ func NewFieldResponse(field models.Field) FieldResponse {
 		Type:         string(field.Type),
 		Location:     field.Location,
 		PricePerHour: field.PricePerHour,
+		ImageURL:     field.ImageURL,
 		Facilities:   DecodeFacilities(field.Facilities),
 		Status:       string(field.Status),
 	}
