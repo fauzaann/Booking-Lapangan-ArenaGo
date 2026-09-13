@@ -27,10 +27,12 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 	return &userRepository{db: db}
 }
 
+// Create menyimpan user baru ke database.
 func (r *userRepository) Create(ctx context.Context, user *models.User) error {
 	return translate(r.db.WithContext(ctx).Create(user).Error, "user not found")
 }
 
+// FindByID mengambil user berdasarkan primary key.
 func (r *userRepository) FindByID(ctx context.Context, id uint) (*models.User, error) {
 	var user models.User
 	if err := r.db.WithContext(ctx).First(&user, id).Error; err != nil {
@@ -39,6 +41,7 @@ func (r *userRepository) FindByID(ctx context.Context, id uint) (*models.User, e
 	return &user, nil
 }
 
+// FindByEmail mengambil user berdasarkan email unik.
 func (r *userRepository) FindByEmail(ctx context.Context, email string) (*models.User, error) {
 	var user models.User
 	if err := r.db.WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
@@ -47,6 +50,7 @@ func (r *userRepository) FindByEmail(ctx context.Context, email string) (*models
 	return &user, nil
 }
 
+// ExistsByEmail memeriksa apakah email sudah terdaftar.
 func (r *userRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&models.User{}).Where("email = ?", email).Count(&count).Error
@@ -56,6 +60,7 @@ func (r *userRepository) ExistsByEmail(ctx context.Context, email string) (bool,
 	return count > 0, nil
 }
 
+// FindAll mengambil user secara terurut dengan pagination.
 func (r *userRepository) FindAll(ctx context.Context, params ListParams) ([]models.User, int64, error) {
 	params = params.Normalize()
 
@@ -76,6 +81,7 @@ func (r *userRepository) FindAll(ctx context.Context, params ListParams) ([]mode
 	return users, total, nil
 }
 
+// Count menghitung seluruh user yang tersimpan.
 func (r *userRepository) Count(ctx context.Context) (int64, error) {
 	var total int64
 	err := r.db.WithContext(ctx).Model(&models.User{}).Count(&total).Error

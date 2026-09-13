@@ -68,10 +68,16 @@ export default function AdminDashboard() {
           <h1 className="font-display text-3xl sm:text-4xl">Ringkasan operasional</h1>
           <p className="mt-2 text-ink-muted">Pantau booking, pendapatan, dan ketersediaan lapangan hari ini.</p>
         </div>
-        <Link to="/admin/transaksi" className="inline-flex items-center gap-2 self-start rounded-full bg-onyx px-4 py-2.5 text-sm font-medium text-canvas hover:bg-onyx-hover sm:self-auto">
-          <Icon name="receipt_long" size={17} />
-          Lihat transaksi
-        </Link>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <Link to="/admin/aktivitas" className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2.5 text-sm font-medium hover:border-ink-muted">
+            <Icon name="history" size={17} />
+            Aktivitas
+          </Link>
+          <Link to="/admin/transaksi" className="inline-flex items-center gap-2 rounded-full bg-onyx px-4 py-2.5 text-sm font-medium text-canvas hover:bg-onyx-hover">
+            <Icon name="receipt_long" size={17} />
+            Lihat transaksi
+          </Link>
+        </div>
       </div>
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

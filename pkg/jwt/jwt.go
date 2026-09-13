@@ -38,6 +38,7 @@ func NewManager(secret string, duration time.Duration) Manager {
 	return &hmacManager{secret: []byte(secret), duration: duration}
 }
 
+// Generate membuat token JWT berisi identitas dan role user.
 func (m *hmacManager) Generate(userID uint, email, role string) (string, time.Time, error) {
 	now := time.Now()
 	expiresAt := now.Add(m.duration)
@@ -61,6 +62,7 @@ func (m *hmacManager) Generate(userID uint, email, role string) (string, time.Ti
 	return signed, expiresAt, nil
 }
 
+// Verify memvalidasi signature, issuer, masa berlaku, dan claims token.
 func (m *hmacManager) Verify(token string) (*Claims, error) {
 	claims := &Claims{}
 	parsed, err := jwtlib.ParseWithClaims(token, claims, func(t *jwtlib.Token) (interface{}, error) {

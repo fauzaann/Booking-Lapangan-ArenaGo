@@ -22,6 +22,7 @@ func NewFieldHandler(fields controllers.FieldController, validate *validator.Val
 }
 
 // List menangani GET /api/v1/fields dengan filter dan pagination.
+// List menangani GET /api/v1/fields dan filter pagination.
 func (h *FieldHandler) List(c *gin.Context) {
 	var query dto.FieldFilterQuery
 	if !h.bindQuery(c, &query) {
@@ -30,6 +31,7 @@ func (h *FieldHandler) List(c *gin.Context) {
 	query.PaginationQuery = query.PaginationQuery.Normalize()
 
 	fields, total, err := h.fields.List(c.Request.Context(), query)
+	// Detail menangani GET /api/v1/fields/:id.
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -38,6 +40,7 @@ func (h *FieldHandler) List(c *gin.Context) {
 }
 
 // Detail menangani GET /api/v1/fields/:id.
+// Availability menangani GET /api/v1/fields/:id/availability.
 func (h *FieldHandler) Detail(c *gin.Context) {
 	id, ok := uintParam(c, "id")
 	if !ok {

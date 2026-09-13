@@ -32,6 +32,7 @@ func NewFieldController(uow repository.UnitOfWork) FieldController {
 	return &fieldController{uow: uow}
 }
 
+// List mengambil daftar lapangan padel sesuai filter dan pagination.
 func (c *fieldController) List(ctx context.Context, query dto.FieldFilterQuery) ([]dto.FieldResponse, int64, error) {
 	query.PaginationQuery = query.PaginationQuery.Normalize()
 
@@ -56,6 +57,7 @@ func (c *fieldController) List(ctx context.Context, query dto.FieldFilterQuery) 
 	return dto.NewFieldResponses(fields), total, nil
 }
 
+// Detail mengambil detail lapangan beserta jadwal operasional.
 func (c *fieldController) Detail(ctx context.Context, id uint) (*dto.FieldResponse, error) {
 	field, err := c.uow.Field().FindDetailByID(ctx, id)
 	if err != nil {
@@ -110,6 +112,7 @@ func (c *fieldController) Create(ctx context.Context, req dto.CreateFieldRequest
 	return c.Detail(ctx, field.ID)
 }
 
+// Update memperbarui data lapangan yang dipilih.
 func (c *fieldController) Update(ctx context.Context, id uint, req dto.UpdateFieldRequest) (*dto.FieldResponse, error) {
 	field, err := c.uow.Field().FindByID(ctx, id)
 	if err != nil {
@@ -150,6 +153,7 @@ func (c *fieldController) Update(ctx context.Context, id uint, req dto.UpdateFie
 	return c.Detail(ctx, field.ID)
 }
 
+// Delete menghapus lapangan berdasarkan ID.
 func (c *fieldController) Delete(ctx context.Context, id uint) error {
 	return c.uow.Field().Delete(ctx, id)
 }
@@ -237,6 +241,7 @@ func (c *fieldController) Availability(ctx context.Context, id uint, date string
 	return response, nil
 }
 
+// ListSchedules mengambil seluruh jadwal operasional lapangan.
 func (c *fieldController) ListSchedules(ctx context.Context, fieldID uint) ([]dto.ScheduleResponse, error) {
 	if _, err := c.uow.Field().FindByID(ctx, fieldID); err != nil {
 		return nil, err
@@ -248,6 +253,7 @@ func (c *fieldController) ListSchedules(ctx context.Context, fieldID uint) ([]dt
 	return dto.NewScheduleResponses(schedules), nil
 }
 
+// UpsertSchedules menyimpan atau memperbarui jadwal operasional lapangan.
 func (c *fieldController) UpsertSchedules(ctx context.Context, fieldID uint, req dto.UpsertScheduleRequest) ([]dto.ScheduleResponse, error) {
 	if _, err := c.uow.Field().FindByID(ctx, fieldID); err != nil {
 		return nil, err
@@ -267,6 +273,7 @@ func (c *fieldController) UpsertSchedules(ctx context.Context, fieldID uint, req
 	return c.ListSchedules(ctx, fieldID)
 }
 
+// buildSchedules memvalidasi request jadwal dan mengubahnya menjadi model.
 func buildSchedules(requests []dto.ScheduleRequest) ([]models.Schedule, error) {
 	schedules := make([]models.Schedule, 0, len(requests))
 	seen := make(map[models.Day]bool, len(requests))

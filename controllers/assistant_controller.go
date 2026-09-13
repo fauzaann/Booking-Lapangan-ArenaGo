@@ -24,10 +24,12 @@ var bookingTopicTerms = []string{
 	"sewa", "main", "bayar", "pembayaran", "invoice", "xendit", "batal", "cancel",
 }
 
+// NewAssistantController membuat controller assistant dari client chat.
 func NewAssistantController(chat openrouter.ChatClient) AssistantController {
 	return &assistantController{chat: chat}
 }
 
+// Chat memvalidasi topik lalu meneruskan percakapan booking ke provider AI.
 func (c *assistantController) Chat(ctx context.Context, request dto.AssistantChatRequest) (*dto.AssistantChatResponse, error) {
 	if !isBookingTopic(request.Message) {
 		return &dto.AssistantChatResponse{Reply: outOfScopeReply}, nil
@@ -56,6 +58,7 @@ func (c *assistantController) Chat(ctx context.Context, request dto.AssistantCha
 	return &dto.AssistantChatResponse{Reply: reply}, nil
 }
 
+// isBookingTopic memeriksa apakah pesan berhubungan dengan layanan booking.
 func isBookingTopic(message string) bool {
 	message = strings.ToLower(strings.TrimSpace(message))
 	for _, term := range bookingTopicTerms {

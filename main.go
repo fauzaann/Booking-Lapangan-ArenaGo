@@ -26,6 +26,7 @@ import (
 	"Booking-Lapangan/worker"
 )
 
+// main merakit dependency aplikasi, menjalankan server, dan mengelola shutdown.
 func main() {
 	seedOnly := flag.Bool("seed", false, "jalankan seeder lalu keluar")
 	migrateOnly := flag.Bool("migrate-only", false, "jalankan migrasi lalu keluar")
@@ -107,6 +108,7 @@ func main() {
 		Payment:   handler.NewPaymentHandler(paymentController, validate),
 		Assistant: handler.NewAssistantHandler(controllers.NewAssistantController(assistant), validate),
 		Admin:     handler.NewAdminHandler(adminController, validate),
+		AuditLog:  uow.AuditLog(),
 	})
 
 	server := &http.Server{

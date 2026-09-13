@@ -7,6 +7,7 @@ import (
 	"Booking-Lapangan/pkg/openrouter"
 )
 
+// NewOpenRouterClient membuat client OpenRouter dari konfigurasi aplikasi.
 func NewOpenRouterClient(cfg *Config) *openrouter.Client {
 	return openrouter.NewClient(openrouter.Options{
 		APIKey:  cfg.OpenRouter.APIKey,

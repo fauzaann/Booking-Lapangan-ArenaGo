@@ -34,6 +34,7 @@ type ChatClient interface {
 	Chat(ctx context.Context, messages []Message) (string, error)
 }
 
+// NewClient membuat client OpenRouter dengan HTTP client dan timeout default.
 func NewClient(options Options) *Client {
 	baseURL := strings.TrimSuffix(options.BaseURL, "/")
 	if baseURL == "" {
@@ -51,6 +52,7 @@ func NewClient(options Options) *Client {
 	}
 }
 
+// Chat mengirim daftar pesan ke endpoint chat completion OpenRouter.
 func (c *Client) Chat(ctx context.Context, messages []Message) (string, error) {
 	if strings.TrimSpace(c.apiKey) == "" {
 		return "", fmt.Errorf("openrouter api key is not configured")

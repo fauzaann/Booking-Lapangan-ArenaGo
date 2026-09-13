@@ -9,7 +9,7 @@ export default function RequireAuth({ children, role }) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  if (role && user?.role !== role) {
+  if (role && user?.role?.toLowerCase() !== role.toLowerCase()) {
     return <Navigate to="/" replace />;
   }
 

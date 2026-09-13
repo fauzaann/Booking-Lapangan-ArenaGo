@@ -36,15 +36,18 @@ func NewPaymentRepository(db *gorm.DB) PaymentRepository {
 	return &paymentRepository{db: db}
 }
 
+// Create menyimpan pembayaran baru ke database.
 func (r *paymentRepository) Create(ctx context.Context, payment *models.Payment) error {
 	return translate(r.db.WithContext(ctx).Create(payment).Error, "payment not found")
 }
 
+// Update menyimpan perubahan status atau metadata pembayaran.
 func (r *paymentRepository) Update(ctx context.Context, payment *models.Payment) error {
 	err := r.db.WithContext(ctx).Omit("Booking").Save(payment).Error
 	return translate(err, "payment not found")
 }
 
+// FindByID mengambil pembayaran berdasarkan primary key.
 func (r *paymentRepository) FindByID(ctx context.Context, id uint) (*models.Payment, error) {
 	var payment models.Payment
 	if err := r.db.WithContext(ctx).First(&payment, id).Error; err != nil {
@@ -53,6 +56,7 @@ func (r *paymentRepository) FindByID(ctx context.Context, id uint) (*models.Paym
 	return &payment, nil
 }
 
+// FindByExternalID mengambil pembayaran berdasarkan ID invoice eksternal.
 func (r *paymentRepository) FindByExternalID(ctx context.Context, externalID string) (*models.Payment, error) {
 	var payment models.Payment
 	err := r.db.WithContext(ctx).Where("external_id = ?", externalID).First(&payment).Error
@@ -62,6 +66,7 @@ func (r *paymentRepository) FindByExternalID(ctx context.Context, externalID str
 	return &payment, nil
 }
 
+// FindByBookingID mengambil pembayaran yang terkait dengan booking.
 func (r *paymentRepository) FindByBookingID(ctx context.Context, bookingID uint) (*models.Payment, error) {
 	var payment models.Payment
 	err := r.db.WithContext(ctx).Where("booking_id = ?", bookingID).First(&payment).Error
@@ -71,6 +76,7 @@ func (r *paymentRepository) FindByBookingID(ctx context.Context, bookingID uint)
 	return &payment, nil
 }
 
+// FindAll mengambil pembayaran dengan filter status dan pagination.
 func (r *paymentRepository) FindAll(ctx context.Context, filter PaymentFilter) ([]models.Payment, int64, error) {
 	filter.ListParams = filter.ListParams.Normalize()
 
@@ -86,6 +92,9 @@ func (r *paymentRepository) FindAll(ctx context.Context, filter PaymentFilter) (
 
 	var payments []models.Payment
 	err := query.Order("id DESC").
+		Preload("Booking").
+		Preload("Booking.Field").
+		Preload("Booking.User").
 		Limit(filter.Limit).
 		Offset(filter.Offset()).
 		Find(&payments).Error

@@ -144,6 +144,7 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// validate memastikan konfigurasi wajib dan aturan nilainya terpenuhi.
 func (c *Config) validate() error {
 	if len(c.JWT.Secret) < 16 {
 		return fmt.Errorf("JWT_SECRET must be set and at least 16 characters long")
@@ -174,6 +175,7 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// getEnv membaca environment variable atau mengembalikan nilai fallback.
 func getEnv(key, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
 		return value
@@ -181,6 +183,7 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// getEnvInt membaca environment variable integer dengan fallback aman.
 func getEnvInt(key string, fallback int) int {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -194,6 +197,7 @@ func getEnvInt(key string, fallback int) int {
 	return parsed
 }
 
+// getEnvBool membaca environment variable boolean dengan fallback aman.
 func getEnvBool(key string, fallback bool) bool {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -207,6 +211,7 @@ func getEnvBool(key string, fallback bool) bool {
 	return parsed
 }
 
+// splitAndTrim memecah daftar comma-separated dan membuang item kosong.
 func splitAndTrim(value string) []string {
 	parts := strings.Split(value, ",")
 	result := make([]string, 0, len(parts))

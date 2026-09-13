@@ -23,6 +23,7 @@ func NewBookingHandler(bookings controllers.BookingController, validate *validat
 }
 
 // Create menangani POST /api/v1/bookings.
+// Create menangani POST /api/v1/bookings.
 func (h *BookingHandler) Create(c *gin.Context) {
 	var req dto.CreateBookingRequest
 	if !h.bindJSON(c, &req) {
@@ -47,6 +48,7 @@ func (h *BookingHandler) List(c *gin.Context) {
 	query.PaginationQuery = query.PaginationQuery.Normalize()
 
 	actor := middleware.MustActor(c)
+	// Detail menangani GET /api/v1/bookings/:id.
 	bookings, total, err := h.bookings.List(c.Request.Context(), actor, query)
 	if err != nil {
 		response.Error(c, err)

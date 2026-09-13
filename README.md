@@ -1,5 +1,38 @@
 # Booking-Lapangan-ArenaGo
 
+## Akun Admin
+
+Jalankan migrasi dan seeder terlebih dahulu:
+
+```bash
+go run . -migrate-only
+go run . -seed
+```
+
+Akun admin bawaan:
+
+- Email: `admin@example.com`
+- Password: `admin123`
+
+Setelah login, buka `/admin` untuk melihat dashboard operasional. Role admin dari API (`ADMIN`) sudah ditangani secara case-insensitive oleh frontend.
+
+## Menjalankan Lokal
+
+Jalankan backend dari root repository:
+
+```bash
+go run main.go
+```
+
+Di terminal lain, jalankan frontend dari folder frontend:
+
+```bash
+cd ArenaGO-padel-frontend
+npm run dev
+```
+
+Frontend development memakai proxy `/api` ke backend `http://127.0.0.1:8080`, sehingga halaman Riwayat Booking dan Kelola Jadwal tidak perlu mengakses API lintas-origin secara langsung.
+
 # Booking Field API
 
 Backend REST API **Sistem Booking Lapangan Olahraga** dengan integrasi payment gateway **Xendit**. Dibangun sebagai project akhir Bootcamp Golang dengan penekanan pada correctness, security, dan maintainability — bukan sekadar CRUD yang jalan.

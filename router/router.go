@@ -13,6 +13,7 @@ import (
 	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/jwt"
 	"Booking-Lapangan/pkg/response"
+	"Booking-Lapangan/repository"
 )
 
 // Dependencies adalah seluruh komponen yang dibutuhkan router.
@@ -28,6 +29,7 @@ type Dependencies struct {
 	Payment   *handler.PaymentHandler
 	Assistant *handler.AssistantHandler
 	Admin     *handler.AdminHandler
+	AuditLog  repository.AuditLogRepository
 }
 
 // New menyusun seluruh route aplikasi.
@@ -39,6 +41,7 @@ func New(deps Dependencies) *gin.Engine {
 	engine := gin.New()
 	engine.Use(middleware.Recovery())
 	engine.Use(middleware.RequestLogger())
+	engine.Use(middleware.AuditLogger(deps.AuditLog))
 	engine.Use(middleware.CORS(deps.Config.App.AllowedOrigins))
 
 	engine.NoRoute(func(c *gin.Context) {
@@ -100,6 +103,7 @@ func New(deps Dependencies) *gin.Engine {
 	admin := v1.Group("/admin", authenticated, adminOnly)
 	{
 		admin.GET("/dashboard", deps.Admin.Dashboard)
+		admin.GET("/audit-logs", deps.Admin.AuditLogs)
 		admin.GET("/users", deps.User.List)
 
 		admin.GET("/fields", deps.Field.List)

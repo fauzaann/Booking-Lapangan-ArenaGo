@@ -1,4 +1,4 @@
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8080/api/v1").replace(/\/$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "/api/v1").replace(/\/$/, "");
 
 async function request(path, options = {}) {
   const token = localStorage.getItem("arenago:token");
@@ -59,7 +59,9 @@ export const api = {
   bookingPayment: (id) => request(`/bookings/${id}/payment`),
   bookings: (params = {}) => request(`/bookings?${new URLSearchParams(params)}`),
   adminDashboard: () => request("/admin/dashboard"),
+  adminAuditLogs: (params = {}) => request(`/admin/audit-logs?${new URLSearchParams({ page: "1", limit: "25", ...params })}`),
   adminBookings: (params = {}) => request(`/admin/bookings?${new URLSearchParams({ page: "1", limit: "8", ...params })}`),
+  adminBooking: (id) => request(`/admin/bookings/${id}`),
   adminFields: () => request("/admin/fields?page=1&limit=50"),
   adminPayments: (params = {}) => request(`/admin/payments?${new URLSearchParams({ page: "1", limit: "50", ...params })}`),
   assistantChat: (payload) => request("/assistant/chat", { method: "POST", body: JSON.stringify(payload) }),

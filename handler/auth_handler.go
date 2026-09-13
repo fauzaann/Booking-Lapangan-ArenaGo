@@ -21,6 +21,7 @@ func NewAuthHandler(auth controllers.AuthController, validate *validator.Validat
 }
 
 // Register menangani POST /api/v1/auth/register.
+// Register menangani POST /api/v1/auth/register.
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req dto.RegisterRequest
 	if !h.bindJSON(c, &req) {
@@ -28,6 +29,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	result, err := h.auth.Register(c.Request.Context(), req)
+	// Login menangani POST /api/v1/auth/login.
 	if err != nil {
 		response.Error(c, err)
 		return

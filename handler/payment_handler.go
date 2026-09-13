@@ -34,6 +34,7 @@ func (h *PaymentHandler) Webhook(c *gin.Context) {
 	}
 
 	token := c.GetHeader("x-callback-token")
+	// DetailByBooking menangani GET /api/v1/bookings/:id/payment.
 	if err := h.payments.HandleWebhook(c.Request.Context(), token, payload); err != nil {
 		response.Error(c, err)
 		return

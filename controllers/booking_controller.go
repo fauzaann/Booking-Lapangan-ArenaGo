@@ -228,6 +228,7 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 	}, nil
 }
 
+// paymentInvoiceError menerjemahkan error Xendit menjadi error API yang aman.
 func paymentInvoiceError(err error) *apperror.AppError {
 	var apiErr *xendit.APIError
 	if errors.As(err, &apiErr) {
@@ -241,6 +242,7 @@ func paymentInvoiceError(err error) *apperror.AppError {
 	return apperror.BadGateway("Xendit payment service is unavailable", err)
 }
 
+// List mengambil booking milik user atau seluruh booking untuk admin.
 func (c *bookingController) List(ctx context.Context, actor Actor, query dto.BookingFilterQuery) ([]dto.BookingResponse, int64, error) {
 	query.PaginationQuery = query.PaginationQuery.Normalize()
 
@@ -280,6 +282,7 @@ func (c *bookingController) List(ctx context.Context, actor Actor, query dto.Boo
 	return dto.NewBookingResponses(bookings), total, nil
 }
 
+// Detail mengambil detail booking setelah pemeriksaan kepemilikan.
 func (c *bookingController) Detail(ctx context.Context, actor Actor, id uint) (*dto.BookingResponse, error) {
 	booking, err := c.uow.Booking().FindDetailByID(ctx, id)
 	if err != nil {
@@ -351,6 +354,7 @@ func (c *bookingController) Cancel(ctx context.Context, actor Actor, id uint) (*
 	return c.Detail(ctx, actor, booking.ID)
 }
 
+// UpdateStatus mengubah status booking dari panel admin.
 func (c *bookingController) UpdateStatus(ctx context.Context, id uint, status models.BookingStatus) (*dto.BookingResponse, error) {
 	if !status.Valid() {
 		return nil, apperror.Unprocessable("invalid booking status")
@@ -396,6 +400,7 @@ func (c *bookingController) rollbackBooking(ctx context.Context, booking *models
 	}
 }
 
+// ensureBookingOwner memastikan actor boleh mengakses booking tertentu.
 func ensureBookingOwner(actor Actor, booking *models.Booking) error {
 	if actor.IsAdmin() || booking.UserID == actor.UserID {
 		return nil
@@ -409,6 +414,7 @@ func BuildBookingCode(now time.Time, sequence int) string {
 	return fmt.Sprintf("BK-%s-%04d", now.Format("20060102"), sequence)
 }
 
+// buildBookingItems membuat item harga untuk setiap slot satu jam.
 func buildBookingItems(start, end string, pricePerHour float64) []models.BookingItem {
 	slots := timeutil.HourlySlots(start, end)
 	items := make([]models.BookingItem, 0, len(slots))

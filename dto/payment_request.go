@@ -33,11 +33,18 @@ type PaymentResponse struct {
 	PaidAt         *time.Time `json:"paid_at,omitempty"`
 	ExpiredAt      *time.Time `json:"expired_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
+	BookingCode    string     `json:"booking_code,omitempty"`
+	CustomerName   string     `json:"customer_name,omitempty"`
+	CustomerEmail  string     `json:"customer_email,omitempty"`
+	FieldName      string     `json:"field_name,omitempty"`
+	BookingDate    string     `json:"booking_date,omitempty"`
+	StartTime      string     `json:"start_time,omitempty"`
+	EndTime        string     `json:"end_time,omitempty"`
 }
 
 // NewPaymentResponse memetakan model pembayaran menjadi response.
 func NewPaymentResponse(payment models.Payment) PaymentResponse {
-	return PaymentResponse{
+	response := PaymentResponse{
 		ID:             payment.ID,
 		BookingID:      payment.BookingID,
 		ExternalID:     payment.ExternalID,
@@ -51,6 +58,20 @@ func NewPaymentResponse(payment models.Payment) PaymentResponse {
 		ExpiredAt:      payment.ExpiredAt,
 		CreatedAt:      payment.CreatedAt,
 	}
+	if payment.Booking != nil {
+		response.BookingCode = payment.Booking.BookingCode
+		response.BookingDate = payment.Booking.BookingDate.Format("2006-01-02")
+		response.StartTime = payment.Booking.StartTime
+		response.EndTime = payment.Booking.EndTime
+		if payment.Booking.User != nil {
+			response.CustomerName = payment.Booking.User.Name
+			response.CustomerEmail = payment.Booking.User.Email
+		}
+		if payment.Booking.Field != nil {
+			response.FieldName = payment.Booking.Field.Name
+		}
+	}
+	return response
 }
 
 // NewPaymentResponses memetakan daftar pembayaran menjadi daftar response.

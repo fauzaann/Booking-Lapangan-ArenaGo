@@ -21,6 +21,7 @@ func NewScheduleHandler(fields controllers.FieldController, validate *validator.
 }
 
 // List menangani GET /api/v1/fields/:id/schedules.
+// List menangani GET /api/v1/fields/:id/schedules.
 func (h *ScheduleHandler) List(c *gin.Context) {
 	fieldID, ok := uintParam(c, "id")
 	if !ok {

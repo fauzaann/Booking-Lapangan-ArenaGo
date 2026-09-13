@@ -14,10 +14,12 @@ type AssistantHandler struct {
 	assistant controllers.AssistantController
 }
 
+// NewAssistantHandler membuat handler assistant dengan dependency validator.
 func NewAssistantHandler(assistant controllers.AssistantController, validate *validator.Validator) *AssistantHandler {
 	return &AssistantHandler{Base: NewBase(validate), assistant: assistant}
 }
 
+// Chat menangani POST /api/v1/assistant/chat.
 func (h *AssistantHandler) Chat(c *gin.Context) {
 	var request dto.AssistantChatRequest
 	if !h.bindJSON(c, &request) {

@@ -49,10 +49,12 @@ func NewBookingRepository(db *gorm.DB) BookingRepository {
 	return &bookingRepository{db: db}
 }
 
+// Create menyimpan booking baru ke database.
 func (r *bookingRepository) Create(ctx context.Context, booking *models.Booking) error {
 	return translate(r.db.WithContext(ctx).Create(booking).Error, "booking not found")
 }
 
+// Update menyimpan perubahan booking tanpa menulis ulang relasi terkait.
 func (r *bookingRepository) Update(ctx context.Context, booking *models.Booking) error {
 	// Omit asosiasi agar Save tidak ikut menulis ulang user/field/payment.
 	err := r.db.WithContext(ctx).
@@ -61,6 +63,7 @@ func (r *bookingRepository) Update(ctx context.Context, booking *models.Booking)
 	return translate(err, "booking not found")
 }
 
+// FindByID mengambil booking tanpa preload relasi.
 func (r *bookingRepository) FindByID(ctx context.Context, id uint) (*models.Booking, error) {
 	var booking models.Booking
 	if err := r.db.WithContext(ctx).First(&booking, id).Error; err != nil {
@@ -69,6 +72,7 @@ func (r *bookingRepository) FindByID(ctx context.Context, id uint) (*models.Book
 	return &booking, nil
 }
 
+// FindDetailByID mengambil booking beserta field, user, item, dan payment.
 func (r *bookingRepository) FindDetailByID(ctx context.Context, id uint) (*models.Booking, error) {
 	var booking models.Booking
 	err := r.db.WithContext(ctx).
@@ -83,6 +87,7 @@ func (r *bookingRepository) FindDetailByID(ctx context.Context, id uint) (*model
 	return &booking, nil
 }
 
+// FindByCode mengambil booking berdasarkan kode publiknya.
 func (r *bookingRepository) FindByCode(ctx context.Context, code string) (*models.Booking, error) {
 	var booking models.Booking
 	err := r.db.WithContext(ctx).
@@ -96,6 +101,7 @@ func (r *bookingRepository) FindByCode(ctx context.Context, code string) (*model
 	return &booking, nil
 }
 
+// FindAll mengambil booking dengan filter pemilik, field, status, tanggal, dan pagination.
 func (r *bookingRepository) FindAll(ctx context.Context, filter BookingFilter) ([]models.Booking, int64, error) {
 	filter.ListParams = filter.ListParams.Normalize()
 
@@ -136,6 +142,7 @@ func (r *bookingRepository) FindAll(ctx context.Context, filter BookingFilter) (
 	return bookings, total, nil
 }
 
+// FindActiveByFieldAndDate mengambil booking yang masih memblokir slot.
 func (r *bookingRepository) FindActiveByFieldAndDate(ctx context.Context, fieldID uint, date time.Time) ([]models.Booking, error) {
 	var bookings []models.Booking
 	err := r.db.WithContext(ctx).
@@ -200,12 +207,14 @@ func (r *bookingRepository) NextSequence(ctx context.Context, date time.Time) (i
 	return int(count) + 1, nil
 }
 
+// Count menghitung seluruh booking.
 func (r *bookingRepository) Count(ctx context.Context) (int64, error) {
 	var total int64
 	err := r.db.WithContext(ctx).Model(&models.Booking{}).Count(&total).Error
 	return total, translate(err, "booking not found")
 }
 
+// CountByStatus menghitung jumlah booking untuk setiap status.
 func (r *bookingRepository) CountByStatus(ctx context.Context) (map[models.BookingStatus]int64, error) {
 	type row struct {
 		Status models.BookingStatus
@@ -228,6 +237,7 @@ func (r *bookingRepository) CountByStatus(ctx context.Context) (map[models.Booki
 	return result, nil
 }
 
+// advisoryKey mengubah identifier tekstual menjadi kunci advisory PostgreSQL.
 func advisoryKey(value string) int64 {
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(value))

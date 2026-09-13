@@ -57,7 +57,7 @@ export function AuthProvider({ children }) {
   const value = {
     user,
     isAuthenticated: !!user,
-    isAdmin: user?.role === "admin",
+    isAdmin: user?.role?.toUpperCase() === "ADMIN",
     status,
     login,
     register,

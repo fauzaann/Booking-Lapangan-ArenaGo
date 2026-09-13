@@ -39,14 +39,17 @@ func NewFieldRepository(db *gorm.DB) FieldRepository {
 	return &fieldRepository{db: db}
 }
 
+// Create menyimpan lapangan baru ke database.
 func (r *fieldRepository) Create(ctx context.Context, field *models.Field) error {
 	return translate(r.db.WithContext(ctx).Create(field).Error, "field not found")
 }
 
+// Update menyimpan perubahan data lapangan.
 func (r *fieldRepository) Update(ctx context.Context, field *models.Field) error {
 	return translate(r.db.WithContext(ctx).Save(field).Error, "field not found")
 }
 
+// Delete menghapus lapangan berdasarkan ID.
 func (r *fieldRepository) Delete(ctx context.Context, id uint) error {
 	result := r.db.WithContext(ctx).Delete(&models.Field{}, id)
 	if result.Error != nil {
@@ -58,6 +61,7 @@ func (r *fieldRepository) Delete(ctx context.Context, id uint) error {
 	return nil
 }
 
+// FindByID mengambil lapangan tanpa relasi jadwal.
 func (r *fieldRepository) FindByID(ctx context.Context, id uint) (*models.Field, error) {
 	var field models.Field
 	if err := r.db.WithContext(ctx).First(&field, id).Error; err != nil {
@@ -66,6 +70,7 @@ func (r *fieldRepository) FindByID(ctx context.Context, id uint) (*models.Field,
 	return &field, nil
 }
 
+// FindDetailByID mengambil lapangan beserta jadwal operasionalnya.
 func (r *fieldRepository) FindDetailByID(ctx context.Context, id uint) (*models.Field, error) {
 	var field models.Field
 	err := r.db.WithContext(ctx).
@@ -77,6 +82,7 @@ func (r *fieldRepository) FindDetailByID(ctx context.Context, id uint) (*models.
 	return &field, nil
 }
 
+// FindAll mengambil lapangan padel dengan filter dan pagination.
 func (r *fieldRepository) FindAll(ctx context.Context, filter FieldFilter) ([]models.Field, int64, error) {
 	filter.ListParams = filter.ListParams.Normalize()
 
@@ -117,6 +123,7 @@ func (r *fieldRepository) FindAll(ctx context.Context, filter FieldFilter) ([]mo
 	return fields, total, nil
 }
 
+// Count menghitung lapangan padel yang tersimpan.
 func (r *fieldRepository) Count(ctx context.Context) (int64, error) {
 	var total int64
 	err := r.db.WithContext(ctx).Model(&models.Field{}).Where("type = ?", string(models.FieldTypePadel)).Count(&total).Error

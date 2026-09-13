@@ -43,6 +43,7 @@ func (w *BookingExpirer) Start(ctx context.Context) {
 	}
 }
 
+// runOnce memproses pembayaran kedaluwarsa dan booking yang selesai.
 func (w *BookingExpirer) runOnce(ctx context.Context) {
 	now := time.Now()
 

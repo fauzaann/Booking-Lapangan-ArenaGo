@@ -35,7 +35,7 @@ func NewMeta(page, limit int, total int64) *Meta {
 	return &Meta{Page: page, Limit: limit, TotalItems: total, TotalPages: totalPages}
 }
 
-// Success menulis response sukses dengan status kustom.
+// Success menulis response sukses dengan status HTTP tertentu.
 func Success(c *gin.Context, status int, message string, data interface{}) {
 	c.JSON(status, Body{Success: true, Message: message, Data: data})
 }

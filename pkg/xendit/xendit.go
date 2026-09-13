@@ -91,6 +91,7 @@ type APIError struct {
 	Message    string `json:"message"`
 }
 
+// Error mengembalikan ringkasan error API Xendit.
 func (e *APIError) Error() string {
 	return fmt.Sprintf("xendit api error (%d %s): %s", e.StatusCode, e.Code, e.Message)
 }
@@ -140,6 +141,7 @@ func (c *Client) GetInvoice(ctx context.Context, invoiceID string) (*Invoice, er
 	return c.do(ctx, http.MethodGet, "/v2/invoices/"+invoiceID, nil)
 }
 
+// do menjalankan request HTTP terautentikasi ke Xendit.
 func (c *Client) do(ctx context.Context, method, path string, payload interface{}) (*Invoice, error) {
 	if c.secretKey == "" {
 		return nil, fmt.Errorf("xendit secret key is not configured")

@@ -10,12 +10,14 @@ import Payment from "./pages/Payment";
 import PaymentResult from "./pages/PaymentResult";
 import ETicket from "./pages/ETicket";
 import MyBookings from "./pages/MyBookings";
+import BookingDetail from "./pages/BookingDetail";
 import Profile from "./pages/Profile";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import TransactionList from "./pages/TransactionList";
 import TransactionDetail from "./pages/TransactionDetail";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminAuditLog from "./pages/AdminAuditLog";
 
 export default function App() {
   return (
@@ -74,6 +76,14 @@ export default function App() {
               }
             />
             <Route
+              path="/riwayat/:id"
+              element={
+                <RequireAuth>
+                  <BookingDetail />
+                </RequireAuth>
+              }
+            />
+            <Route
               path="/profil"
               element={
                 <RequireAuth>
@@ -96,6 +106,14 @@ export default function App() {
               element={
                 <RequireAuth role="admin">
                   <TransactionList />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/aktivitas"
+              element={
+                <RequireAuth role="admin">
+                  <AdminAuditLog />
                 </RequireAuth>
               }
             />

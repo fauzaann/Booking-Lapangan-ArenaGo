@@ -141,6 +141,7 @@ func (c *paymentController) verify(ctx context.Context, payload xendit.WebhookPa
 	return verified
 }
 
+// DetailByBooking mengambil pembayaran setelah memastikan actor berhak melihat booking.
 func (c *paymentController) DetailByBooking(ctx context.Context, actor Actor, bookingID uint) (*dto.PaymentResponse, error) {
 	booking, err := c.uow.Booking().FindByID(ctx, bookingID)
 	if err != nil {
@@ -158,6 +159,7 @@ func (c *paymentController) DetailByBooking(ctx context.Context, actor Actor, bo
 	return &response, nil
 }
 
+// List mengambil daftar pembayaran untuk kebutuhan admin.
 func (c *paymentController) List(ctx context.Context, query dto.PaymentFilterQuery) ([]dto.PaymentResponse, int64, error) {
 	query.PaginationQuery = query.PaginationQuery.Normalize()
 

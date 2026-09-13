@@ -21,6 +21,7 @@ type Registry interface {
 	Schedule() ScheduleRepository
 	Booking() BookingRepository
 	Payment() PaymentRepository
+	AuditLog() AuditLogRepository
 }
 
 // UnitOfWork adalah Registry yang mampu menjalankan beberapa operasi
@@ -39,11 +40,23 @@ func NewUnitOfWork(db *gorm.DB) UnitOfWork {
 	return &registry{db: db}
 }
 
-func (r *registry) User() UserRepository         { return NewUserRepository(r.db) }
-func (r *registry) Field() FieldRepository       { return NewFieldRepository(r.db) }
+// User mengembalikan repository user pada database aktif.
+func (r *registry) User() UserRepository { return NewUserRepository(r.db) }
+
+// Field mengembalikan repository field pada database aktif.
+func (r *registry) Field() FieldRepository { return NewFieldRepository(r.db) }
+
+// Schedule mengembalikan repository schedule pada database aktif.
 func (r *registry) Schedule() ScheduleRepository { return NewScheduleRepository(r.db) }
-func (r *registry) Booking() BookingRepository   { return NewBookingRepository(r.db) }
-func (r *registry) Payment() PaymentRepository   { return NewPaymentRepository(r.db) }
+
+// Booking mengembalikan repository booking pada database aktif.
+func (r *registry) Booking() BookingRepository { return NewBookingRepository(r.db) }
+
+// Payment mengembalikan repository payment pada database aktif.
+func (r *registry) Payment() PaymentRepository { return NewPaymentRepository(r.db) }
+
+// AuditLog mengembalikan repository audit log pada database aktif.
+func (r *registry) AuditLog() AuditLogRepository { return NewAuditLogRepository(r.db) }
 
 // Atomic menjalankan fn di dalam satu transaksi. Jika fn mengembalikan error,
 // transaksi otomatis di-rollback; jika nil, transaksi di-commit.

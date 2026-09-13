@@ -12,6 +12,7 @@ import (
 type AdminController interface {
 	Dashboard(ctx context.Context) (*dto.DashboardResponse, error)
 	ListUsers(ctx context.Context, query dto.PaginationQuery) ([]dto.UserResponse, int64, error)
+	ListAuditLogs(ctx context.Context, query dto.PaginationQuery) ([]dto.AuditLogResponse, int64, error)
 }
 
 type adminController struct {
@@ -66,6 +67,7 @@ func (c *adminController) Dashboard(ctx context.Context) (*dto.DashboardResponse
 	}, nil
 }
 
+// ListUsers mengambil daftar user untuk panel admin.
 func (c *adminController) ListUsers(ctx context.Context, query dto.PaginationQuery) ([]dto.UserResponse, int64, error) {
 	query = query.Normalize()
 
@@ -74,4 +76,14 @@ func (c *adminController) ListUsers(ctx context.Context, query dto.PaginationQue
 		return nil, 0, err
 	}
 	return dto.NewUserResponses(users), total, nil
+}
+
+// ListAuditLogs mengambil aktivitas request terbaru untuk panel admin.
+func (c *adminController) ListAuditLogs(ctx context.Context, query dto.PaginationQuery) ([]dto.AuditLogResponse, int64, error) {
+	query = query.Normalize()
+	logs, total, err := c.uow.AuditLog().FindAll(ctx, repository.ListParams{Page: query.Page, Limit: query.Limit})
+	if err != nil {
+		return nil, 0, err
+	}
+	return dto.NewAuditLogResponses(logs), total, nil
 }

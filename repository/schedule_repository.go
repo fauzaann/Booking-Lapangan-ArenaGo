@@ -26,6 +26,7 @@ func NewScheduleRepository(db *gorm.DB) ScheduleRepository {
 	return &scheduleRepository{db: db}
 }
 
+// FindByFieldID mengambil seluruh jadwal operasional satu lapangan.
 func (r *scheduleRepository) FindByFieldID(ctx context.Context, fieldID uint) ([]models.Schedule, error) {
 	var schedules []models.Schedule
 	err := r.db.WithContext(ctx).
@@ -38,6 +39,7 @@ func (r *scheduleRepository) FindByFieldID(ctx context.Context, fieldID uint) ([
 	return schedules, nil
 }
 
+// FindByFieldAndDay mengambil jadwal operasional satu hari.
 func (r *scheduleRepository) FindByFieldAndDay(ctx context.Context, fieldID uint, day models.Day) (*models.Schedule, error) {
 	var schedule models.Schedule
 	err := r.db.WithContext(ctx).
@@ -62,6 +64,7 @@ func (r *scheduleRepository) Upsert(ctx context.Context, schedules []models.Sche
 	return translate(err, "schedule not found")
 }
 
+// DeleteByFieldID menghapus seluruh jadwal milik satu lapangan.
 func (r *scheduleRepository) DeleteByFieldID(ctx context.Context, fieldID uint) error {
 	err := r.db.WithContext(ctx).Where("field_id = ?", fieldID).Delete(&models.Schedule{}).Error
 	return translate(err, "schedule not found")

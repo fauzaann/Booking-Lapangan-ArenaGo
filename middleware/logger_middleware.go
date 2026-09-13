@@ -1,13 +1,16 @@
 package middleware
 
 import (
+	"context"
 	"log"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/response"
+	"Booking-Lapangan/repository"
 )
 
 // RequestLogger mencatat setiap request beserta latensi dan status code.
@@ -33,6 +36,28 @@ func RequestLogger() gin.HandlerFunc {
 
 		for _, ginErr := range c.Errors {
 			log.Printf("error: %v", ginErr.Err)
+		}
+	}
+}
+
+// AuditLogger menyimpan jejak setiap request, termasuk request tanpa actor.
+func AuditLogger(audit repository.AuditLogRepository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		started := time.Now()
+		c.Next()
+
+		entry := &models.AuditLog{
+			Method: c.Request.Method, Path: c.Request.URL.Path, StatusCode: c.Writer.Status(),
+			DurationMS: time.Since(started).Milliseconds(), IPAddress: c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		}
+		if actor, ok := ActorFrom(c); ok {
+			entry.ActorID = &actor.UserID
+			entry.ActorEmail = actor.Email
+			entry.ActorRole = actor.Role
+		}
+		if err := audit.Create(context.Background(), entry); err != nil {
+			log.Printf("audit: failed to persist request: %v", err)
 		}
 	}
 }

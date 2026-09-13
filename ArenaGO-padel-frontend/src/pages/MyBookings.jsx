@@ -76,20 +76,9 @@ export default function MyBookings() {
               </div>
               <div className="flex items-center justify-between border-t border-border pt-3">
                 <span className="font-display text-lg">{formatIDR(b.total)}</span>
-                {b.status === "confirmed" && (
-                  <Link to="/e-tiket" state={{ booking: sampleBookingFrom(b) }}>
-                    <Button variant="secondary" size="sm">
-                      Lihat E-Tiket
-                    </Button>
-                  </Link>
-                )}
-                {b.status === "completed" && (
-                  <Link to={`/jadwal/${b.court.id}`}>
-                    <Button variant="ghost" size="sm">
-                      Booking Lagi
-                    </Button>
-                  </Link>
-                )}
+                <Link to={`/riwayat/${b.backendId}`}>
+                  <Button variant="secondary" size="sm">Lihat Detail</Button>
+                </Link>
               </div>
             </Card>
           ))}
@@ -116,13 +105,3 @@ function mapBooking(booking) {
   };
 }
 
-function sampleBookingFrom(b) {
-  return {
-    id: b.id,
-    court: b.court,
-    date: new Date(b.date),
-    slots: b.slots,
-    rental: { rackets: 0, balls: 0 },
-    customer: { name: "Raka Pratama", phone: "", email: "" },
-  };
-}

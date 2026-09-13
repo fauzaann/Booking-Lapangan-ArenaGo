@@ -29,6 +29,7 @@ func NewAuthController(users repository.UserRepository, tokens jwt.Manager) Auth
 	return &authController{users: users, tokens: tokens}
 }
 
+// Register membuat user biasa baru dan menerbitkan token sesi.
 func (c *authController) Register(ctx context.Context, req dto.RegisterRequest) (*dto.AuthResponse, error) {
 	email := normalizeEmail(req.Email)
 
@@ -63,6 +64,7 @@ func (c *authController) Register(ctx context.Context, req dto.RegisterRequest) 
 	return c.issueToken(user)
 }
 
+// Login memverifikasi kredensial dan menerbitkan token sesi.
 func (c *authController) Login(ctx context.Context, req dto.LoginRequest) (*dto.AuthResponse, error) {
 	user, err := c.users.FindByEmail(ctx, normalizeEmail(req.Email))
 	if err != nil {
@@ -80,6 +82,7 @@ func (c *authController) Login(ctx context.Context, req dto.LoginRequest) (*dto.
 	return c.issueToken(user)
 }
 
+// Profile mengambil profil user berdasarkan ID dari token.
 func (c *authController) Profile(ctx context.Context, userID uint) (*dto.UserResponse, error) {
 	user, err := c.users.FindByID(ctx, userID)
 	if err != nil {
@@ -89,6 +92,7 @@ func (c *authController) Profile(ctx context.Context, userID uint) (*dto.UserRes
 	return &response, nil
 }
 
+// issueToken membuat response autentikasi untuk user yang sudah terverifikasi.
 func (c *authController) issueToken(user *models.User) (*dto.AuthResponse, error) {
 	token, expiresAt, err := c.tokens.Generate(user.ID, user.Email, string(user.Role))
 	if err != nil {
@@ -101,6 +105,7 @@ func (c *authController) issueToken(user *models.User) (*dto.AuthResponse, error
 	}, nil
 }
 
+// normalizeEmail menormalisasi email agar pencarian konsisten.
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }

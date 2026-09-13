@@ -25,6 +25,7 @@ func Seed(db *gorm.DB) error {
 	return nil
 }
 
+// seedUsers membuat akun admin dan user development jika belum ada.
 func seedUsers(db *gorm.DB) error {
 	users := []struct {
 		Name     string
@@ -66,6 +67,7 @@ func seedUsers(db *gorm.DB) error {
 	return nil
 }
 
+// seedFields membuat lapangan contoh beserta jadwal operasionalnya.
 func seedFields(db *gorm.DB) error {
 	fields := []models.Field{
 		{
