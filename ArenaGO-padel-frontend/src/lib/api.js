@@ -57,6 +57,7 @@ export const api = {
   createBooking: (payload) => request("/bookings", { method: "POST", body: JSON.stringify(payload) }),
   booking: (id) => request(`/bookings/${id}`),
   bookingPayment: (id) => request(`/bookings/${id}/payment`),
+  syncPayment: (id) => request(`/bookings/${id}/sync-payment`, { method: "POST" }),
   bookings: (params = {}) => request(`/bookings?${new URLSearchParams(params)}`),
   adminDashboard: () => request("/admin/dashboard"),
   adminAuditLogs: (params = {}) => request(`/admin/audit-logs?${new URLSearchParams({ page: "1", limit: "25", ...params })}`),
@@ -65,6 +66,11 @@ export const api = {
   adminFields: () => request("/admin/fields?page=1&limit=50"),
   adminPayments: (params = {}) => request(`/admin/payments?${new URLSearchParams({ page: "1", limit: "50", ...params })}`),
   assistantChat: (payload) => request("/assistant/chat", { method: "POST", body: JSON.stringify(payload) }),
+  notifications: (params = {}) => request(`/notifications?${new URLSearchParams(params)}`),
+  unreadNotificationCount: () => request("/notifications/unread-count"),
+  markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: "PATCH" }),
+  markAllNotificationsRead: () => request("/notifications/read-all", { method: "PATCH" }),
+  adminReminders: (params = {}) => request(`/admin/reminders?${new URLSearchParams(params)}`),
 };
 
 export function saveSession(auth) {

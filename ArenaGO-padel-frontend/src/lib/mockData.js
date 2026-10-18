@@ -87,10 +87,25 @@ function addOneHour(time) {
   return `${String(next).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-export const upcomingDays = Array.from({ length: 7 }).map((_, i) => {
-  const d = new Date();
-  d.setDate(d.getDate() + i);
-  return d;
+export function getUpcomingDays(count = 7) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Array.from({ length: count }).map((_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    return d;
+  });
+}
+
+// Proxy dinamis agar impor `upcomingDays` selalu mengembalikan tanggal terbaru hari ini
+export const upcomingDays = new Proxy([], {
+  get(target, prop) {
+    const days = getUpcomingDays(7);
+    if (prop === "length") return days.length;
+    if (typeof prop === "string" && !isNaN(prop)) return days[Number(prop)];
+    if (typeof days[prop] === "function") return days[prop].bind(days);
+    return days[prop];
+  },
 });
 
 export const sampleBooking = {

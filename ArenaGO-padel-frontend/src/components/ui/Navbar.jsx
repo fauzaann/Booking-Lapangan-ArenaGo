@@ -3,6 +3,7 @@ import { useState } from "react";
 import Icon from "./Icon";
 import { useAuth } from "../../context/AuthContext";
 import BrandLogo from "./BrandLogo";
+import NotificationDropdown from "./NotificationDropdown";
 
 function getNavItems({ isAuthenticated, isAdmin }) {
   const items = [{ to: "/", label: "Eksplor", icon: "sports_tennis" }];
@@ -70,11 +71,13 @@ export default function Navbar() {
               </Link>
             </div>
           ) : (
-            <div className="relative">
-              <button
-                onClick={() => setMenuOpen((v) => !v)}
-                className="flex items-center gap-2 rounded-full border border-border py-1 pl-1 pr-3 hover:border-ink-muted"
-              >
+            <div className="flex items-center gap-2.5">
+              <NotificationDropdown />
+              <div className="relative">
+                <button
+                  onClick={() => setMenuOpen((v) => !v)}
+                  className="flex items-center gap-2 rounded-full border border-border py-1 pl-1 pr-3 hover:border-ink-muted"
+                >
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-champagne to-onyx text-xs font-semibold text-canvas">
                   {user.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
                 </span>
@@ -112,6 +115,7 @@ export default function Navbar() {
                   </div>
                 </>
               )}
+            </div>
             </div>
           )}
         </div>

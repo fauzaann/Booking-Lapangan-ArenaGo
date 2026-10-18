@@ -26,10 +26,11 @@ type Dependencies struct {
 	Field     *handler.FieldHandler
 	Schedule  *handler.ScheduleHandler
 	Booking   *handler.BookingHandler
-	Payment   *handler.PaymentHandler
-	Assistant *handler.AssistantHandler
-	Admin     *handler.AdminHandler
-	AuditLog  repository.AuditLogRepository
+	Payment      *handler.PaymentHandler
+	Assistant    *handler.AssistantHandler
+	Admin        *handler.AdminHandler
+	Notification *handler.NotificationHandler
+	AuditLog     repository.AuditLogRepository
 }
 
 // New menyusun seluruh route aplikasi.
@@ -85,6 +86,7 @@ func New(deps Dependencies) *gin.Engine {
 		bookings.GET("", deps.Booking.List)
 		bookings.GET("/:id", deps.Booking.Detail)
 		bookings.GET("/:id/payment", deps.Payment.DetailByBooking)
+		bookings.POST("/:id/sync-payment", deps.Payment.SyncPayment)
 		bookings.DELETE("/:id", deps.Booking.Cancel)
 	}
 
@@ -98,6 +100,17 @@ func New(deps Dependencies) *gin.Engine {
 
 	// ---------- Assistant ----------
 	v1.POST("/assistant/chat", deps.Assistant.Chat)
+
+	// ---------- Notifications (user login) ----------
+	if deps.Notification != nil {
+		notifications := v1.Group("/notifications", authenticated)
+		{
+			notifications.GET("", deps.Notification.List)
+			notifications.GET("/unread-count", deps.Notification.UnreadCount)
+			notifications.PATCH("/:id/read", deps.Notification.MarkRead)
+			notifications.PATCH("/read-all", deps.Notification.MarkAllRead)
+		}
+	}
 
 	// ---------- Admin ----------
 	admin := v1.Group("/admin", authenticated, adminOnly)
@@ -118,6 +131,10 @@ func New(deps Dependencies) *gin.Engine {
 		admin.PATCH("/bookings/:id/status", deps.Booking.UpdateStatus)
 
 		admin.GET("/payments", deps.Payment.List)
+
+		if deps.Notification != nil {
+			admin.GET("/reminders", deps.Notification.AdminListReminders)
+		}
 	}
 
 	return engine

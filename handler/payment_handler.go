@@ -58,6 +58,23 @@ func (h *PaymentHandler) DetailByBooking(c *gin.Context) {
 	response.OK(c, "Payment retrieved", payment)
 }
 
+// SyncPayment menangani POST /api/v1/bookings/:id/sync-payment.
+// Endpoint ini memicu sinkronisasi status pembayaran langsung ke server Xendit.
+func (h *PaymentHandler) SyncPayment(c *gin.Context) {
+	bookingID, ok := uintParam(c, "id")
+	if !ok {
+		return
+	}
+
+	actor := middleware.MustActor(c)
+	payment, err := h.payments.SyncPaymentStatus(c.Request.Context(), actor, bookingID)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, "Payment status synchronized", payment)
+}
+
 // List menangani GET /api/v1/admin/payments.
 func (h *PaymentHandler) List(c *gin.Context) {
 	var query dto.PaymentFilterQuery

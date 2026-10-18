@@ -6,6 +6,7 @@ import Icon from "../components/ui/Icon";
 import StatusBadge from "../components/ui/StatusBadge";
 import { api } from "../lib/api";
 import { formatIDR } from "../lib/format";
+import { useAuth } from "../context/AuthContext";
 
 const BOOKING_STATUS = {
   PENDING: ["pending", "Menunggu pembayaran"],
@@ -19,28 +20,55 @@ const BOOKING_STATUS = {
 
 export default function BookingDetail() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [booking, setBooking] = useState(null);
   const [payment, setPayment] = useState(null);
   const [error, setError] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState("");
+
+  const loadData = async () => {
+    try {
+      const [bookingResult, paymentResult] = await Promise.all([
+        api.booking(id),
+        api.bookingPayment(id),
+      ]);
+      setBooking(bookingResult.data);
+      setPayment(paymentResult.data);
+      return { booking: bookingResult.data, payment: paymentResult.data };
+    } catch (err) {
+      setError(err.message);
+      return null;
+    }
+  };
 
   useEffect(() => {
-    let active = true;
-    Promise.all([api.booking(id), api.bookingPayment(id)])
-      .then(([bookingResult, paymentResult]) => {
-        if (!active) return;
-        setBooking(bookingResult.data);
-        setPayment(paymentResult.data);
-      })
-      .catch((err) => {
-        if (active) setError(err.message);
-      });
-    return () => { active = false; };
+    loadData();
   }, [id]);
+
+  const handleSyncPayment = async () => {
+    setSyncing(true);
+    setSyncFeedback("");
+    try {
+      await api.syncPayment(id);
+      const updated = await loadData();
+      if (updated?.payment?.status === "PAID" || updated?.booking?.status === "CONFIRMED") {
+        setSyncFeedback("Status berhasil disinkronkan: Pembayaran Lunas!");
+      } else {
+        setSyncFeedback("Status pembayaran masih menunggu. Silakan selesaikan di Xendit.");
+      }
+    } catch (err) {
+      setSyncFeedback(err.message || "Gagal menyinkronkan status.");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   if (error) return <div className="px-5 py-20 text-center text-sm text-red-600">{error}</div>;
   if (!booking) return <div className="px-5 py-20 text-center text-sm text-ink-muted">Memuat detail booking...</div>;
 
   const [status, statusLabel] = BOOKING_STATUS[booking.status] || ["pending", booking.status];
+  const isPending = booking.status === "PENDING" || booking.status === "WAITING_PAYMENT";
   const canPay = payment?.status === "PENDING" && payment.invoice_url;
 
   return (
@@ -81,13 +109,33 @@ export default function BookingDetail() {
             <Row label="Dibayar" value={payment?.paid_at ? formatDateTime(payment.paid_at) : "-"} />
             <Row label="Invoice" value={payment?.invoice_id || "-"} />
           </dl>
+          {syncFeedback && (
+            <p className="mt-4 rounded-md bg-canvas px-3 py-2 text-center text-xs text-ink-muted">
+              {syncFeedback}
+            </p>
+          )}
+
           {canPay ? (
             <a href={payment.invoice_url} target="_blank" rel="noreferrer" className="mt-6 block">
               <Button className="w-full">Lanjutkan Pembayaran</Button>
             </a>
           ) : null}
+
+          {isPending ? (
+            <div className="mt-3">
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={handleSyncPayment}
+                disabled={syncing}
+              >
+                {syncing ? "Memeriksa Status..." : "Cek Status Pembayaran"}
+              </Button>
+            </div>
+          ) : null}
+
           {(booking.status === "CONFIRMED" || booking.status === "PAID") ? (
-            <Link to="/e-tiket" state={{ booking: toETicketBooking(booking) }} className="mt-3 block">
+            <Link to="/e-tiket" state={{ booking: toETicketBooking(booking, user) }} className="mt-4 block">
               <Button variant="secondary" className="w-full">Lihat E-Tiket</Button>
             </Link>
           ) : null}
@@ -113,7 +161,7 @@ function formatPaymentStatus(status) {
   return { PAID: "Berhasil", PENDING: "Menunggu pembayaran", FAILED: "Gagal", EXPIRED: "Expired" }[status] || "Belum tersedia";
 }
 
-function toETicketBooking(booking) {
+function toETicketBooking(booking, user) {
   return {
     id: booking.booking_code,
     court: {
@@ -125,6 +173,10 @@ function toETicketBooking(booking) {
     slots: [booking.start_time, booking.end_time],
     rental: { rackets: 0, balls: 0 },
     totalOverride: booking.total_price,
-    customer: { name: "Pemesan", phone: "", email: "" },
+    customer: {
+      name: user?.name || "Pemesan",
+      phone: user?.phone || "",
+      email: user?.email || "",
+    },
   };
 }

@@ -75,6 +75,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - Mendapatkan `payment_url` (invoice Xendit) dan memantau status pembayaran
 - Melihat riwayat & detail booking miliknya sendiri
 - Membatalkan booking sesuai aturan
+- Kotak masuk notifikasi in-app dan pengingat jadwal bermain (H-24 & H-2 jam sebelum main) berbasis MongoDB
 
 **Admin**
 
@@ -83,6 +84,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - Mengatur jam operasional per hari
 - Melihat seluruh booking, mengubah status booking
 - Melihat seluruh pembayaran dan data user
+- Monitoring log pengingat jadwal bermain (`reminder_jobs` MongoDB)
 
 **Sistem**
 
@@ -115,14 +117,15 @@ UI otomatis memakai gradient fallback.
 
 | Komponen | Pilihan |
 | --- | --- |
-| Bahasa | Go 1.22 |
+| Bahasa | Go 1.25 |
 | HTTP Framework | Gin |
-| Database | PostgreSQL 16 |
-| ORM | GORM |
+| Database Utama | PostgreSQL 16 (GORM) |
+| Database Notifikasi & Antrean | MongoDB (mongo-driver/v2) |
 | Auth | JWT (golang-jwt/v5) + bcrypt |
 | Validasi | go-playground/validator/v10 |
 | Config | godotenv (`.env`) |
 | Payment Gateway | Xendit Invoice API |
+| Chatbot Assistant | OpenRouter API |
 | Dokumentasi | OpenAPI 3.0 + Swagger UI |
 | Container | Docker + Docker Compose |
 
@@ -290,6 +293,10 @@ Spesifikasi mentah: `http://localhost:8080/docs/openapi.yaml` (file: `docs/opena
 | GET | `/api/v1/bookings/:id` | User |
 | GET | `/api/v1/bookings/:id/payment` | User |
 | DELETE | `/api/v1/bookings/:id` | User |
+| GET | `/api/v1/notifications` | User |
+| GET | `/api/v1/notifications/unread-count` | User |
+| PATCH | `/api/v1/notifications/:id/read` | User |
+| PATCH | `/api/v1/notifications/read-all` | User |
 | POST | `/api/v1/payments/webhook` | Xendit (x-callback-token) |
 | GET | `/api/v1/admin/dashboard` | Admin |
 | GET | `/api/v1/admin/users` | Admin |
@@ -299,6 +306,7 @@ Spesifikasi mentah: `http://localhost:8080/docs/openapi.yaml` (file: `docs/opena
 | GET | `/api/v1/admin/bookings` | Admin |
 | PATCH | `/api/v1/admin/bookings/:id/status` | Admin |
 | GET | `/api/v1/admin/payments` | Admin |
+| GET | `/api/v1/admin/reminders` | Admin |
 
 ### Format Response
 

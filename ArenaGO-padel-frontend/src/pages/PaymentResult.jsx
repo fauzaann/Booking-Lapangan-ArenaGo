@@ -26,36 +26,57 @@ export default function PaymentResult() {
 
     let cancelled = false;
     let timer;
+    const searchParams = new URLSearchParams(location.search);
+    const queryBookingId = searchParams.get("booking_id");
     const stored = JSON.parse(localStorage.getItem("arenago:pending-payment") || "null");
-    if (!stored?.bookingId) {
+    const targetBookingId = queryBookingId || stored?.bookingId;
+
+    if (!targetBookingId) {
       setError("Data booking tidak ditemukan. Silakan cek menu Riwayat.");
       setLoading(false);
       return undefined;
     }
+
     async function checkStatus() {
       try {
+        // Coba sinkronisasi langsung status dari Xendit (khususnya untuk localhost / development)
+        try {
+          await api.syncPayment(targetBookingId);
+        } catch (syncErr) {
+          console.warn("Payment sync attempt:", syncErr);
+        }
+
         const [bookingResult, paymentResult] = await Promise.all([
-          api.booking(stored.bookingId),
-          api.bookingPayment(stored.bookingId),
+          api.booking(targetBookingId),
+          api.bookingPayment(targetBookingId),
         ]);
         if (cancelled) return;
         setBooking(bookingResult.data);
         setPayment(paymentResult.data);
-        if (paymentResult.data.status === "PAID" || bookingResult.data.status === "CONFIRMED") {
+        if (paymentResult.data?.status === "PAID" || bookingResult.data?.status === "CONFIRMED") {
           localStorage.removeItem("arenago:pending-payment");
           setLoading(false);
           return;
         }
-        if (attempt < MAX_ATTEMPTS) timer = window.setTimeout(() => setAttempt((value) => value + 1), 2000);
-        else setLoading(false);
+        if (attempt < MAX_ATTEMPTS) {
+          timer = window.setTimeout(() => setAttempt((value) => value + 1), 2000);
+        } else {
+          setLoading(false);
+        }
       } catch (requestError) {
-        if (!cancelled) { setError(requestError.message); setLoading(false); }
+        if (!cancelled) {
+          setError(requestError.message);
+          setLoading(false);
+        }
       }
     }
 
     checkStatus();
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [attempt, failed]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [attempt, failed, location.search]);
 
   if (failed) return <ResultMessage />;
 
@@ -63,11 +84,57 @@ export default function PaymentResult() {
   return (
     <div className="flex min-h-[calc(100vh-160px)] items-center justify-center px-5 py-12 sm:px-8">
       <Card className="w-full max-w-lg text-center">
-        <div className={`mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full ${paid ? "bg-sage-tint text-sage" : "bg-champagne-tint text-champagne"}`}><Icon name={paid ? "check_circle" : "schedule"} size={34} filled={paid} /></div>
-        <h1 className="mb-2 font-display text-3xl">{paid ? "Pembayaran Berhasil" : "Memverifikasi Pembayaran"}</h1>
-        <p className="mb-6 text-sm text-ink-muted">{error || (paid ? "Booking Anda sudah terkonfirmasi." : loading ? "Kami sedang menunggu konfirmasi dari Xendit. Halaman ini akan diperbarui otomatis." : "Pembayaran belum terkonfirmasi. Jika sudah membayar, cek Riwayat Booking.")}</p>
-        {booking && <div className="mb-6 space-y-3 rounded-md bg-surface px-5 py-4 text-left text-sm"><div className="flex justify-between gap-4"><span className="text-ink-faint">Booking</span><span className="font-medium">{booking.booking_code}</span></div><div className="flex justify-between gap-4"><span className="text-ink-faint">Lapangan</span><span className="font-medium">{booking.field_name || `Lapangan #${booking.field_id}`}</span></div><div className="flex justify-between gap-4"><span className="text-ink-faint">Total</span><span className="font-medium">{formatIDR(booking.total_price)}</span></div><div className="flex justify-between gap-4"><span className="text-ink-faint">Status</span><StatusBadge status={paid ? "confirmed" : "pending"} label={paid ? "Terkonfirmasi" : "Menunggu pembayaran"} /></div></div>}
-        <div className="flex flex-col gap-3 sm:flex-row sm:justify-center"><Link to="/riwayat"><Button variant="secondary">Lihat Riwayat</Button></Link>{paid && <Link to="/"><Button>Kembali ke Beranda</Button></Link>}</div>
+        <div className={`mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full ${paid ? "bg-sage-tint text-sage" : "bg-champagne-tint text-champagne"}`}>
+          <Icon name={paid ? "check_circle" : "schedule"} size={34} filled={paid} />
+        </div>
+        <h1 className="mb-2 font-display text-3xl">
+          {paid ? "Pembayaran Berhasil" : "Memverifikasi Pembayaran"}
+        </h1>
+        <p className="mb-6 text-sm text-ink-muted">
+          {error || (paid ? "Booking Anda sudah terkonfirmasi." : loading ? "Kami sedang memverifikasi pembayaran Anda ke Xendit..." : "Pembayaran belum terkonfirmasi. Jika Anda sudah menyelesaikan pembayaran di Xendit, klik tombol 'Sinkronkan Pembayaran' di bawah.")}
+        </p>
+        {booking && (
+          <div className="mb-6 space-y-3 rounded-md bg-surface px-5 py-4 text-left text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-ink-faint">Booking</span>
+              <span className="font-medium">{booking.booking_code}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-ink-faint">Lapangan</span>
+              <span className="font-medium">{booking.field_name || `Lapangan #${booking.field_id}`}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-ink-faint">Total</span>
+              <span className="font-medium">{formatIDR(booking.total_price)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-ink-faint">Status</span>
+              <StatusBadge status={paid ? "confirmed" : "pending"} label={paid ? "Terkonfirmasi" : "Menunggu pembayaran"} />
+            </div>
+          </div>
+        )}
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+          {!paid && !loading && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                setError("");
+                setLoading(true);
+                setAttempt(0);
+              }}
+            >
+              Sinkronkan Pembayaran
+            </Button>
+          )}
+          <Link to="/riwayat">
+            <Button variant="secondary">Lihat Riwayat</Button>
+          </Link>
+          {paid && (
+            <Link to="/">
+              <Button>Kembali ke Beranda</Button>
+            </Link>
+          )}
+        </div>
       </Card>
     </div>
   );

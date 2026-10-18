@@ -11,12 +11,20 @@ const STATUS_MAP = {
   confirmed: "confirmed",
   completed: "available",
   cancelled: "failed",
+  waiting_payment: "pending",
+  pending: "pending",
+  paid: "confirmed",
+  expired: "failed",
 };
 
 const STATUS_LABEL = {
   confirmed: "Terkonfirmasi",
   completed: "Selesai",
   cancelled: "Dibatalkan",
+  waiting_payment: "Menunggu pembayaran",
+  pending: "Menunggu pembayaran",
+  paid: "Dibayar",
+  expired: "Expired",
 };
 
 export default function MyBookings() {

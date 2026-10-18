@@ -165,9 +165,6 @@ func (c *fieldController) Availability(ctx context.Context, id uint, date string
 	if err != nil {
 		return nil, apperror.BadRequest("date must use YYYY-MM-DD format")
 	}
-	if bookingDate.Before(timeutil.Today()) {
-		return nil, apperror.BadRequest("date must not be in the past")
-	}
 
 	field, err := c.uow.Field().FindByID(ctx, id)
 	if err != nil {
@@ -182,6 +179,12 @@ func (c *fieldController) Availability(ctx context.Context, id uint, date string
 		Day:          string(day),
 		PricePerHour: field.PricePerHour,
 		Slots:        []dto.SlotResponse{},
+	}
+
+	// Jika tanggal berada di masa lalu, kembalikan respons non-aktif yang aman tanpa melempar error 400.
+	if bookingDate.Before(timeutil.Today()) {
+		response.IsOpen = false
+		return response, nil
 	}
 
 	if !field.IsActive() {

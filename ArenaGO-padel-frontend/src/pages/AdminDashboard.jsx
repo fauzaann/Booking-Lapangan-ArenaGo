@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import Card from "../components/ui/Card";
 import Icon from "../components/ui/Icon";
 import StatusBadge from "../components/ui/StatusBadge";
-import { upcomingDays } from "../lib/mockData";
+import { getUpcomingDays } from "../lib/mockData";
 import { api } from "../lib/api";
 import { formatDateInput, formatDateShort, formatIDR } from "../lib/format";
 
@@ -22,8 +22,10 @@ export default function AdminDashboard() {
   const [bookings, setBookings] = useState([]);
   const [courts, setCourts] = useState([]);
   const [courtId, setCourtId] = useState("");
+  const days = useMemo(() => getUpcomingDays(7), []);
   const [dayIndex, setDayIndex] = useState(0);
   const [availability, setAvailability] = useState(null);
+  const [availabilityError, setAvailabilityError] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -40,10 +42,15 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!courtId) return;
     setAvailability(null);
-    api.availability(courtId, formatDateInput(upcomingDays[dayIndex]))
+    setAvailabilityError("");
+    const targetDate = days[dayIndex] || days[0];
+    api.availability(courtId, formatDateInput(targetDate))
       .then((result) => setAvailability(result.data))
-      .catch((err) => setError(err.message));
-  }, [courtId, dayIndex]);
+      .catch((err) => {
+        setAvailability(null);
+        setAvailabilityError(err.message);
+      });
+  }, [courtId, dayIndex, days]);
 
   const slots = useMemo(() => (availability?.slots || []).map((slot) => ({
     time: slot.start_time,
@@ -150,7 +157,7 @@ export default function AdminDashboard() {
           ))}
         </div>
         <div className="mb-5 flex gap-2.5 overflow-x-auto pb-2 no-scrollbar">
-          {upcomingDays.map((date, index) => (
+          {days.map((date, index) => (
             <button key={index} onClick={() => setDayIndex(index)} className={`flex min-w-[76px] flex-col items-center gap-1 rounded-md border px-3 py-3 ${dayIndex === index ? "border-onyx bg-onyx text-canvas" : "border-border bg-surface-raised text-ink hover:border-sage"}`}>
               <span className="text-[11px] uppercase tracking-wide opacity-80">{formatDateShort(date).split(",")[0]}</span>
               <span className="font-display text-lg leading-none">{date.getDate()}</span>
@@ -162,9 +169,17 @@ export default function AdminDashboard() {
             <h3 className="font-display text-xl">{availability?.field_name || "Jadwal lapangan"}</h3>
             <div className="flex items-center gap-4 text-xs text-ink-faint"><Legend color="bg-surface-raised border border-border" label="Tersedia" /><Legend color="bg-slate/40" label="Terisi" /></div>
           </div>
-          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-7">
-            {slots.map((slot) => <div key={slot.time} className={`flex h-16 flex-col items-center justify-center rounded-md border text-sm font-medium ${slot.status === "booked" ? "border-transparent bg-slate/20 text-ink-faint" : "border-border bg-surface-raised text-ink"}`}><span>{slot.time}</span><span className="mt-0.5 text-[10px] font-normal uppercase tracking-wide opacity-70">{slot.status === "booked" ? "Terisi" : "Tersedia"}</span></div>)}
-          </div>
+          {availabilityError ? (
+            <div className="py-8 text-center text-sm text-ink-muted">{availabilityError}</div>
+          ) : availability && !availability.is_open ? (
+            <div className="py-8 text-center text-sm text-ink-muted">Lapangan tutup pada tanggal ini</div>
+          ) : slots.length === 0 ? (
+            <div className="py-8 text-center text-sm text-ink-muted">Tidak ada slot tersedia</div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-7">
+              {slots.map((slot) => <div key={slot.time} className={`flex h-16 flex-col items-center justify-center rounded-md border text-sm font-medium ${slot.status === "booked" ? "border-transparent bg-slate/20 text-ink-faint" : "border-border bg-surface-raised text-ink"}`}><span>{slot.time}</span><span className="mt-0.5 text-[10px] font-normal uppercase tracking-wide opacity-70">{slot.status === "booked" ? "Terisi" : "Tersedia"}</span></div>)}
+            </div>
+          )}
         </Card>
       </section>
     </div>

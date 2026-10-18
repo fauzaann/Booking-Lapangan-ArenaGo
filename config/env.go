@@ -20,6 +20,7 @@ type Config struct {
 	Xendit     XenditConfig
 	OpenRouter OpenRouterConfig
 	Booking    BookingConfig
+	Mongo      MongoConfig
 }
 
 // AppConfig berisi konfigurasi umum aplikasi.
@@ -87,6 +88,15 @@ type OpenRouterConfig struct {
 	Model   string
 }
 
+// MongoConfig berisi konfigurasi koneksi MongoDB untuk notifikasi dan pengingat jadwal.
+type MongoConfig struct {
+	URI            string
+	Database       string
+	WorkerInterval time.Duration
+	ReminderH24    bool
+	ReminderH2     bool
+}
+
 // Load membaca file .env (jika ada) lalu environment variable.
 func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
@@ -135,6 +145,13 @@ func Load() (*Config, error) {
 			MaxHours:       getEnvInt("BOOKING_MAX_HOUR", 8),
 			CancelMinHours: getEnvInt("BOOKING_CANCEL_MIN_HOUR", 24),
 			ExpirerMinutes: getEnvInt("BOOKING_EXPIRER_MINUTE", 1),
+		},
+		Mongo: MongoConfig{
+			URI:            getEnv("MONGO_URI", "mongodb://localhost:27017"),
+			Database:       getEnv("MONGO_DATABASE", "booking_field"),
+			WorkerInterval: time.Duration(getEnvInt("REMINDER_WORKER_INTERVAL_SEC", 60)) * time.Second,
+			ReminderH24:    getEnvBool("REMINDER_H24_ENABLED", true),
+			ReminderH2:     getEnvBool("REMINDER_H2_ENABLED", true),
 		},
 	}
 

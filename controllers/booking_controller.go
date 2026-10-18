@@ -33,12 +33,14 @@ type BookingController interface {
 	Detail(ctx context.Context, actor Actor, id uint) (*dto.BookingResponse, error)
 	Cancel(ctx context.Context, actor Actor, id uint) (*dto.BookingResponse, error)
 	UpdateStatus(ctx context.Context, id uint, status models.BookingStatus) (*dto.BookingResponse, error)
+	SetNotificationController(nc NotificationController)
 }
 
 type bookingController struct {
 	uow      repository.UnitOfWork
 	invoices xendit.InvoiceService
 	policy   BookingPolicy
+	notif    NotificationController
 }
 
 // NewBookingController membuat BookingController.
@@ -53,6 +55,11 @@ func NewBookingController(uow repository.UnitOfWork, invoices xendit.InvoiceServ
 		policy.InvoiceDuration = 3600
 	}
 	return &bookingController{uow: uow, invoices: invoices, policy: policy}
+}
+
+// SetNotificationController menyambungkan controller notifikasi.
+func (c *bookingController) SetNotificationController(nc NotificationController) {
+	c.notif = nc
 }
 
 // Create menjalankan alur: validasi -> cek jadwal -> cek availability (dalam
@@ -171,6 +178,24 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 		return nil, err
 	}
 
+	successURL := c.policy.SuccessRedirectURL
+	if successURL != "" {
+		sep := "?"
+		if strings.Contains(successURL, "?") {
+			sep = "&"
+		}
+		successURL = fmt.Sprintf("%s%sbooking_id=%d&booking_code=%s", successURL, sep, booking.ID, booking.BookingCode)
+	}
+
+	failureURL := c.policy.FailureRedirectURL
+	if failureURL != "" {
+		sep := "?"
+		if strings.Contains(failureURL, "?") {
+			sep = "&"
+		}
+		failureURL = fmt.Sprintf("%s%sbooking_id=%d&booking_code=%s", failureURL, sep, booking.ID, booking.BookingCode)
+	}
+
 	invoice, err := c.invoices.CreateInvoice(ctx, xendit.CreateInvoiceRequest{
 		ExternalID:      booking.BookingCode,
 		Amount:          totalPrice,
@@ -184,8 +209,8 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 			Price:    field.PricePerHour,
 			Category: string(field.Type),
 		}},
-		SuccessRedirectURL: c.policy.SuccessRedirectURL,
-		FailureRedirectURL: c.policy.FailureRedirectURL,
+		SuccessRedirectURL: successURL,
+		FailureRedirectURL: failureURL,
 	})
 	if err != nil {
 		c.rollbackBooking(ctx, booking, payment)
@@ -351,6 +376,12 @@ func (c *bookingController) Cancel(ctx context.Context, actor Actor, id uint) (*
 		return nil, err
 	}
 
+	if c.notif != nil {
+		go func() {
+			_ = c.notif.CancelRemindersForBooking(context.Background(), booking.ID)
+		}()
+	}
+
 	return c.Detail(ctx, actor, booking.ID)
 }
 
@@ -376,6 +407,19 @@ func (c *bookingController) UpdateStatus(ctx context.Context, id uint, status mo
 	if err := c.uow.Booking().Update(ctx, booking); err != nil {
 		return nil, err
 	}
+
+	if c.notif != nil {
+		if status == models.BookingStatusConfirmed {
+			go func() {
+				_ = c.notif.ScheduleRemindersForBooking(context.Background(), id)
+			}()
+		} else if status == models.BookingStatusCancelled {
+			go func() {
+				_ = c.notif.CancelRemindersForBooking(context.Background(), id)
+			}()
+		}
+	}
+
 	return c.Detail(ctx, Actor{Role: models.RoleAdmin}, id)
 }
 

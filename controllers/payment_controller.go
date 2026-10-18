@@ -19,17 +19,25 @@ type PaymentController interface {
 	HandleWebhook(ctx context.Context, callbackToken string, payload xendit.WebhookPayload) error
 	DetailByBooking(ctx context.Context, actor Actor, bookingID uint) (*dto.PaymentResponse, error)
 	List(ctx context.Context, query dto.PaymentFilterQuery) ([]dto.PaymentResponse, int64, error)
+	SyncPaymentStatus(ctx context.Context, actor Actor, bookingID uint) (*dto.PaymentResponse, error)
+	SetNotificationController(nc NotificationController)
 }
 
 type paymentController struct {
 	uow          repository.UnitOfWork
 	invoices     xendit.InvoiceService
 	webhookToken string
+	notif        NotificationController
 }
 
 // NewPaymentController membuat PaymentController.
 func NewPaymentController(uow repository.UnitOfWork, invoices xendit.InvoiceService, webhookToken string) PaymentController {
 	return &paymentController{uow: uow, invoices: invoices, webhookToken: webhookToken}
+}
+
+// SetNotificationController menyambungkan controller notifikasi untuk memicu reminder saat pembayaran sukses.
+func (c *paymentController) SetNotificationController(nc NotificationController) {
+	c.notif = nc
 }
 
 // HandleWebhook memproses callback invoice dari Xendit.
@@ -53,9 +61,16 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 
 	verified := c.verify(ctx, payload)
 
-	return c.uow.Atomic(ctx, func(r repository.Registry) error {
+	var confirmedBookingID uint
+
+	err := c.uow.Atomic(ctx, func(r repository.Registry) error {
 		payment, err := r.Payment().FindByExternalID(ctx, verified.ExternalID)
 		if err != nil {
+			if apperror.IsNotFound(err) {
+				// Webhook simulasi/test dari dashboard Xendit (misal external_id dummy) diakui sukses 200 OK
+				log.Printf("payment: webhook for external_id '%s' not found in database, acknowledging test callback", verified.ExternalID)
+				return nil
+			}
 			return err
 		}
 
@@ -90,6 +105,7 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 			payment.PaymentMethod = verified.PaymentMethod
 			payment.PaymentChannel = verified.PaymentChannel
 			booking.Status = models.BookingStatusConfirmed
+			confirmedBookingID = booking.ID
 
 		case xendit.StatusExpired:
 			payment.Status = models.PaymentStatusExpired
@@ -107,6 +123,19 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 		}
 		return r.Booking().Update(ctx, booking)
 	})
+	if err != nil {
+		return err
+	}
+
+	if confirmedBookingID > 0 && c.notif != nil {
+		go func() {
+			if scheduleErr := c.notif.ScheduleRemindersForBooking(context.Background(), confirmedBookingID); scheduleErr != nil {
+				log.Printf("payment: failed to schedule reminder for booking %d: %v", confirmedBookingID, scheduleErr)
+			}
+		}()
+	}
+
+	return nil
 }
 
 // verify mengambil ulang data invoice dari Xendit. Jika gagal (misal jaringan),
@@ -172,3 +201,92 @@ func (c *paymentController) List(ctx context.Context, query dto.PaymentFilterQue
 	}
 	return dto.NewPaymentResponses(payments), total, nil
 }
+
+// SyncPaymentStatus mengambil status invoice terbaru langsung dari Xendit dan memperbarui status payment & booking.
+func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, bookingID uint) (*dto.PaymentResponse, error) {
+	booking, err := c.uow.Booking().FindByID(ctx, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureBookingOwner(actor, booking); err != nil {
+		return nil, err
+	}
+
+	payment, err := c.uow.Payment().FindByBookingID(ctx, bookingID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Jika payment sudah berstatus final (PAID), kembalikan langsung
+	if payment.Status == models.PaymentStatusPaid {
+		res := dto.NewPaymentResponse(*payment)
+		return &res, nil
+	}
+
+	// Jika belum ada invoice_id atau client Xendit tidak aktif, kembalikan data lokal
+	if payment.InvoiceID == "" || c.invoices == nil {
+		res := dto.NewPaymentResponse(*payment)
+		return &res, nil
+	}
+
+	// Ambil status invoice aktual dari Xendit API (on-demand reconciliation)
+	invoice, err := c.invoices.GetInvoice(ctx, payment.InvoiceID)
+	if err != nil {
+		log.Printf("payment: failed to fetch invoice from xendit for sync: %v", err)
+		res := dto.NewPaymentResponse(*payment)
+		return &res, nil
+	}
+
+	var confirmedBookingID uint
+	switch strings.ToUpper(strings.TrimSpace(invoice.Status)) {
+	case xendit.StatusPaid, xendit.StatusSettled:
+		err = c.uow.Atomic(ctx, func(r repository.Registry) error {
+			now := timeNow()
+			paidAt := invoice.PaidAt
+			if paidAt == nil {
+				paidAt = &now
+			}
+			payment.Status = models.PaymentStatusPaid
+			payment.PaidAt = paidAt
+			if invoice.PaymentMethod != "" {
+				payment.PaymentMethod = invoice.PaymentMethod
+			}
+			if invoice.PaymentChannel != "" {
+				payment.PaymentChannel = invoice.PaymentChannel
+			}
+			if err := r.Payment().Update(ctx, payment); err != nil {
+				return err
+			}
+
+			booking.Status = models.BookingStatusConfirmed
+			confirmedBookingID = booking.ID
+			return r.Booking().Update(ctx, booking)
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if confirmedBookingID > 0 && c.notif != nil {
+			go func() {
+				_ = c.notif.ScheduleRemindersForBooking(context.Background(), confirmedBookingID)
+			}()
+		}
+
+	case xendit.StatusExpired:
+		_ = c.uow.Atomic(ctx, func(r repository.Registry) error {
+			payment.Status = models.PaymentStatusExpired
+			if err := r.Payment().Update(ctx, payment); err != nil {
+				return err
+			}
+			if booking.Status == models.BookingStatusPending || booking.Status == models.BookingStatusWaitingPayment {
+				booking.Status = models.BookingStatusExpired
+				return r.Booking().Update(ctx, booking)
+			}
+			return nil
+		})
+	}
+
+	res := dto.NewPaymentResponse(*payment)
+	return &res, nil
+}
+

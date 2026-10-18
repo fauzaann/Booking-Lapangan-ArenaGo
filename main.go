@@ -84,6 +84,42 @@ func main() {
 	invoices := config.NewXenditClient(cfg)
 	assistant := config.NewOpenRouterClient(cfg)
 
+	// Inisialisasi MongoDB (Notifikasi & Pengingat Jadwal Bermain)
+	mongoClient, mongoDB, mongoErr := config.NewMongoDB(cfg)
+	var (
+		notifRepo       repository.NotificationRepository
+		reminderRepo    repository.ReminderRepository
+		notifController controllers.NotificationController
+		notifHandler    *handler.NotificationHandler
+	)
+
+	if mongoErr != nil {
+		log.Printf("mongodb: not connected (%v) - notification and reminder features running in standby mode", mongoErr)
+	} else {
+		defer func() {
+			if closeErr := config.CloseMongoDB(mongoClient); closeErr != nil {
+				log.Printf("mongodb: failed to close connection: %v", closeErr)
+			}
+		}()
+		log.Println("mongodb: connected")
+
+		notifRepo = repository.NewNotificationRepository(mongoDB)
+		reminderRepo = repository.NewReminderRepository(mongoDB)
+
+		// Buat index di MongoDB
+		indexCtx, indexCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := notifRepo.EnsureIndexes(indexCtx); err != nil {
+			log.Printf("mongodb: failed to ensure notification indexes: %v", err)
+		}
+		if err := reminderRepo.EnsureIndexes(indexCtx); err != nil {
+			log.Printf("mongodb: failed to ensure reminder indexes: %v", err)
+		}
+		indexCancel()
+	}
+
+	notifController = controllers.NewNotificationController(uow, notifRepo, reminderRepo, cfg.Mongo)
+	notifHandler = handler.NewNotificationHandler(notifController, validate)
+
 	authController := controllers.NewAuthController(uow.User(), tokens)
 	fieldController := controllers.NewFieldController(uow)
 	bookingController := controllers.NewBookingController(uow, invoices, controllers.BookingPolicy{
@@ -97,18 +133,23 @@ func main() {
 	paymentController := controllers.NewPaymentController(uow, invoices, cfg.Xendit.WebhookToken)
 	adminController := controllers.NewAdminController(uow)
 
+	// Hubungkan notifikasi ke lifecycle pembayaran dan pembatalan booking
+	paymentController.SetNotificationController(notifController)
+	bookingController.SetNotificationController(notifController)
+
 	engine := router.New(router.Dependencies{
-		Config:    cfg,
-		JWT:       tokens,
-		Auth:      handler.NewAuthHandler(authController, validate),
-		User:      handler.NewUserHandler(authController, adminController, validate),
-		Field:     handler.NewFieldHandler(fieldController, validate),
-		Schedule:  handler.NewScheduleHandler(fieldController, validate),
-		Booking:   handler.NewBookingHandler(bookingController, validate),
-		Payment:   handler.NewPaymentHandler(paymentController, validate),
-		Assistant: handler.NewAssistantHandler(controllers.NewAssistantController(assistant), validate),
-		Admin:     handler.NewAdminHandler(adminController, validate),
-		AuditLog:  uow.AuditLog(),
+		Config:       cfg,
+		JWT:          tokens,
+		Auth:         handler.NewAuthHandler(authController, validate),
+		User:         handler.NewUserHandler(authController, adminController, validate),
+		Field:        handler.NewFieldHandler(fieldController, validate),
+		Schedule:     handler.NewScheduleHandler(fieldController, validate),
+		Booking:      handler.NewBookingHandler(bookingController, validate),
+		Payment:      handler.NewPaymentHandler(paymentController, validate),
+		Assistant:    handler.NewAssistantHandler(controllers.NewAssistantController(assistant), validate),
+		Admin:        handler.NewAdminHandler(adminController, validate),
+		Notification: notifHandler,
+		AuditLog:     uow.AuditLog(),
 	})
 
 	server := &http.Server{
@@ -125,6 +166,11 @@ func main() {
 
 	expirer := worker.NewBookingExpirer(uow, time.Duration(cfg.Booking.ExpirerMinutes)*time.Minute)
 	go expirer.Start(ctx)
+
+	if reminderRepo != nil && notifRepo != nil {
+		reminderWorker := worker.NewReminderWorker(reminderRepo, notifRepo, cfg.Mongo.WorkerInterval)
+		go reminderWorker.Start(ctx)
+	}
 
 	go func() {
 		log.Printf("server: listening on http://localhost:%s (env=%s)", cfg.App.Port, cfg.App.Env)

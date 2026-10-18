@@ -4,7 +4,7 @@ import Icon from "../components/ui/Icon";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import TimeSlotGrid from "../components/booking/TimeSlotGrid";
-import { upcomingDays } from "../lib/mockData";
+import { getUpcomingDays } from "../lib/mockData";
 import { api } from "../lib/api";
 import { formatDateInput, formatDateShort, formatIDR } from "../lib/format";
 
@@ -13,21 +13,37 @@ export default function SelectSlot() {
   const navigate = useNavigate();
   const [court, setCourt] = useState(null);
   const [availability, setAvailability] = useState(null);
-  const [error, setError] = useState("");
+  const [courtError, setCourtError] = useState("");
+  const [availabilityError, setAvailabilityError] = useState("");
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
 
+  const days = useMemo(() => getUpcomingDays(7), []);
   const [dayIndex, setDayIndex] = useState(0);
   const [selected, setSelected] = useState([]);
-  const selectedDate = upcomingDays[dayIndex];
+  const selectedDate = days[dayIndex] || days[0];
   const dateValue = formatDateInput(selectedDate);
 
   useEffect(() => {
-    setError("");
-    Promise.all([api.field(courtId), api.availability(courtId, dateValue)])
-      .then(([fieldResult, availabilityResult]) => {
-        setCourt(fieldResult.data);
-        setAvailability(availabilityResult.data);
+    setCourtError("");
+    api.field(courtId)
+      .then((res) => setCourt(res.data))
+      .catch((err) => setCourtError(err.message));
+  }, [courtId]);
+
+  useEffect(() => {
+    setAvailabilityError("");
+    setLoadingAvailability(true);
+    api.availability(courtId, dateValue)
+      .then((res) => {
+        setAvailability(res.data);
       })
-      .catch((err) => setError(err.message));
+      .catch((err) => {
+        setAvailability(null);
+        setAvailabilityError(err.message);
+      })
+      .finally(() => {
+        setLoadingAvailability(false);
+      });
   }, [courtId, dateValue]);
 
   const slots = useMemo(
@@ -54,7 +70,7 @@ export default function SelectSlot() {
     });
   }
 
-  if (error) return <div className="px-5 py-20 text-center text-sm text-red-600">{error}</div>;
+  if (courtError) return <div className="px-5 py-20 text-center text-sm text-red-600">{courtError}</div>;
   if (!court) return <div className="px-5 py-20 text-center text-sm text-ink-muted">Memuat lapangan...</div>;
 
   return (
@@ -77,7 +93,7 @@ export default function SelectSlot() {
 
           <h2 className="mb-3 text-sm font-semibold">Pilih Tanggal</h2>
           <div className="mb-8 flex gap-2.5 overflow-x-auto pb-2 no-scrollbar">
-            {upcomingDays.map((d, i) => (
+            {days.map((d, i) => (
               <button
                 key={i}
                 onClick={() => {
@@ -109,7 +125,17 @@ export default function SelectSlot() {
               </span>
             </div>
           </div>
-          {availability && !availability.is_open ? (
+          {loadingAvailability ? (
+            <div className="rounded-lg border border-dashed border-border bg-surface-raised px-5 py-10 text-center text-sm text-ink-muted">
+              Memuat ketersediaan slot...
+            </div>
+          ) : availabilityError ? (
+            <div className="rounded-lg border border-dashed border-border bg-surface-raised px-5 py-10 text-center">
+              <Icon name="info" size={28} className="mb-3 text-amber-500" />
+              <p className="mb-1 font-display text-lg text-amber-600">Jadwal tidak tersedia</p>
+              <p className="text-sm text-ink-muted">{availabilityError}. Silakan pilih tanggal lain di atas.</p>
+            </div>
+          ) : availability && !availability.is_open ? (
             <div className="rounded-lg border border-dashed border-border bg-surface-raised px-5 py-10 text-center">
               <Icon name="event_busy" size={28} className="mb-3 text-ink-faint" />
               <p className="mb-1 font-display text-lg">Lapangan tutup pada tanggal ini</p>
@@ -130,7 +156,7 @@ export default function SelectSlot() {
             <div className="mb-4 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-ink-muted">Tanggal</span>
-                <span className="font-medium">{formatDateShort(upcomingDays[dayIndex])}</span>
+                <span className="font-medium">{formatDateShort(selectedDate)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-ink-muted">Durasi</span>

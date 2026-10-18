@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import Icon from "../components/ui/Icon";
 import Button from "../components/ui/Button";
@@ -7,11 +7,13 @@ import Input from "../components/ui/Input";
 import BookingSummary from "../components/booking/BookingSummary";
 import { sampleBooking } from "../lib/mockData";
 import { api } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { formatDateInput } from "../lib/format";
 
 export default function Confirmation() {
   const { state } = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const booking = state?.court
     ? {
@@ -23,9 +25,25 @@ export default function Confirmation() {
       }
     : sampleBooking;
 
-  const [form, setForm] = useState(booking.customer);
+  // Gunakan data dari akun user yang sedang login, bukan mock data
+  const [form, setForm] = useState({
+    name: user?.name || "",
+    phone: user?.phone || "",
+    email: user?.email || "",
+  });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Sync form jika user tersedia setelah render pertama (misal: async load)
+  useEffect(() => {
+    if (user) {
+      setForm((prev) => ({
+        name: prev.name || user.name || "",
+        phone: prev.phone || user.phone || "",
+        email: prev.email || user.email || "",
+      }));
+    }
+  }, [user]);
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -76,6 +94,12 @@ export default function Confirmation() {
 
           <Card>
             <h2 className="mb-4 font-display text-xl">Data Pemesan</h2>
+            {user && (
+              <p className="mb-4 flex items-center gap-1.5 rounded-md bg-sage-tint px-3 py-2 text-xs text-sage">
+                <Icon name="check_circle" size={14} />
+                Data diambil dari akun Anda. Tetap bisa diubah jika perlu.
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input
                 label="Nama Lengkap"
@@ -125,4 +149,3 @@ function addHour(time) {
   const [hour, minute] = time.split(":").map(Number);
   return `${String((hour + 1) % 24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
-
