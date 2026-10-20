@@ -1,10 +1,11 @@
-package controllers
+package controllers_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/xendit"
@@ -133,7 +134,7 @@ func TestPaymentController_HandleWebhook_TestCallbackNotFound(t *testing.T) {
 	uow := &paymentMockUOW{paymentRepo: paymentRepo, bookingRepo: bookingRepo, auditLogRepo: &testAuditRepo{}}
 	token := "valid-secret-token"
 
-	ctrl := NewPaymentController(uow, &testInvoiceService{}, token)
+	ctrl := controllers.NewPaymentController(uow, &testInvoiceService{}, token)
 
 	// Simulating Xendit Dashboard test webhook with dummy external_id
 	dummyPayload := xendit.WebhookPayload{
@@ -150,7 +151,7 @@ func TestPaymentController_HandleWebhook_TestCallbackNotFound(t *testing.T) {
 }
 
 func TestPaymentController_HandleWebhook_InvalidToken(t *testing.T) {
-	ctrl := NewPaymentController(&paymentMockUOW{}, &testInvoiceService{}, "valid-secret-token")
+	ctrl := controllers.NewPaymentController(&paymentMockUOW{}, &testInvoiceService{}, "valid-secret-token")
 
 	err := ctrl.HandleWebhook(context.Background(), "invalid-token", xendit.WebhookPayload{ExternalID: "ext_1"})
 	if err == nil {
@@ -188,9 +189,9 @@ func TestPaymentController_SyncPaymentStatus_Success(t *testing.T) {
 		},
 	}
 
-	ctrl := NewPaymentController(uow, invService, "valid-token")
+	ctrl := controllers.NewPaymentController(uow, invService, "valid-token")
 
-	actor := Actor{UserID: 1, Role: models.RoleUser}
+	actor := controllers.Actor{UserID: 1, Role: models.RoleUser}
 	res, err := ctrl.SyncPaymentStatus(context.Background(), actor, 10)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)
@@ -231,9 +232,9 @@ func TestPaymentController_SyncPaymentStatus_StillPending(t *testing.T) {
 		},
 	}
 
-	ctrl := NewPaymentController(uow, invService, "valid-token")
+	ctrl := controllers.NewPaymentController(uow, invService, "valid-token")
 
-	actor := Actor{UserID: 1, Role: models.RoleUser}
+	actor := controllers.Actor{UserID: 1, Role: models.RoleUser}
 	res, err := ctrl.SyncPaymentStatus(context.Background(), actor, 10)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)

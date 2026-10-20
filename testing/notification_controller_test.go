@@ -1,4 +1,4 @@
-package controllers
+package controllers_test
 
 import (
 	"context"
@@ -8,14 +8,15 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"Booking-Lapangan/config"
+	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/repository"
 )
 
 // mockReminderRepo implements repository.ReminderRepository for unit testing.
 type mockReminderRepo struct {
-	createdJobs []models.ReminderJob
-	cancelledIDs []uint
+	createdJobs   []models.ReminderJob
+	cancelledIDs  []uint
 	statusUpdates map[string]string
 }
 
@@ -164,15 +165,9 @@ func (m *mockUOW) Atomic(ctx context.Context, fn func(r repository.Registry) err
 }
 
 func TestScheduleRemindersForBooking(t *testing.T) {
-	baseTime := time.Date(2026, 10, 20, 10, 0, 0, 0, time.Local)
-	timeNow = func() time.Time {
-		return baseTime
-	}
-	defer func() {
-		timeNow = time.Now
-	}()
-
-	bookingDate := time.Date(2026, 10, 22, 0, 0, 0, 0, time.Local)
+	baseTime := time.Now()
+	bookingDate := time.Date(baseTime.Year(), baseTime.Month(), baseTime.Day()+5, 0, 0, 0, 0, baseTime.Location())
+	playTime := time.Date(bookingDate.Year(), bookingDate.Month(), bookingDate.Day(), 16, 0, 0, 0, bookingDate.Location())
 	mockBooking := &models.Booking{
 		ID:          100,
 		BookingCode: "AG-TEST-001",
@@ -202,7 +197,7 @@ func TestScheduleRemindersForBooking(t *testing.T) {
 		ReminderH2:  true,
 	}
 
-	controller := NewNotificationController(uow, mockNotif, mockReminder, cfg)
+	controller := controllers.NewNotificationController(uow, mockNotif, mockReminder, cfg)
 
 	ctx := context.Background()
 	err := controller.ScheduleRemindersForBooking(ctx, 100)
@@ -220,7 +215,7 @@ func TestScheduleRemindersForBooking(t *testing.T) {
 		t.Errorf("expected job1 type %s, got %s", models.ReminderTypeH24, job1.ReminderType)
 	}
 	// PlayTime adalah 2026-10-22 16:00, H-24 adalah 2026-10-21 16:00
-	expectedH24 := time.Date(2026, 10, 21, 16, 0, 0, 0, time.Local)
+	expectedH24 := playTime.Add(-24 * time.Hour)
 	if !job1.ScheduledFor.Equal(expectedH24) {
 		t.Errorf("expected H-24 time %v, got %v", expectedH24, job1.ScheduledFor)
 	}
@@ -230,7 +225,7 @@ func TestScheduleRemindersForBooking(t *testing.T) {
 		t.Errorf("expected job2 type %s, got %s", models.ReminderTypeH2, job2.ReminderType)
 	}
 	// PlayTime adalah 2026-10-22 16:00, H-2 adalah 2026-10-22 14:00
-	expectedH2 := time.Date(2026, 10, 22, 14, 0, 0, 0, time.Local)
+	expectedH2 := playTime.Add(-2 * time.Hour)
 	if !job2.ScheduledFor.Equal(expectedH2) {
 		t.Errorf("expected H-2 time %v, got %v", expectedH2, job2.ScheduledFor)
 	}
@@ -249,7 +244,7 @@ func TestCancelRemindersForBooking(t *testing.T) {
 	mockReminder := newMockReminderRepo()
 	mockNotif := newMockNotifRepo()
 
-	controller := NewNotificationController(uow, mockNotif, mockReminder, config.MongoConfig{})
+	controller := controllers.NewNotificationController(uow, mockNotif, mockReminder, config.MongoConfig{})
 	ctx := context.Background()
 
 	if err := controller.CancelRemindersForBooking(ctx, 200); err != nil {
@@ -280,7 +275,7 @@ func TestNotificationReadOperations(t *testing.T) {
 	})
 	mockNotif.unreadCount = 1
 
-	controller := NewNotificationController(nil, mockNotif, mockReminder, config.MongoConfig{})
+	controller := controllers.NewNotificationController(nil, mockNotif, mockReminder, config.MongoConfig{})
 	ctx := context.Background()
 
 	count, err := controller.GetUnreadCount(ctx, 5)

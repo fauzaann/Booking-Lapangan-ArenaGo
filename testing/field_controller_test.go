@@ -1,10 +1,11 @@
-package controllers
+package controllers_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/repository"
 )
@@ -15,7 +16,7 @@ type mockFieldRepo struct {
 
 func (m *mockFieldRepo) Create(ctx context.Context, field *models.Field) error { return nil }
 func (m *mockFieldRepo) Update(ctx context.Context, field *models.Field) error { return nil }
-func (m *mockFieldRepo) Delete(ctx context.Context, id uint) error            { return nil }
+func (m *mockFieldRepo) Delete(ctx context.Context, id uint) error             { return nil }
 func (m *mockFieldRepo) FindByID(ctx context.Context, id uint) (*models.Field, error) {
 	return m.field, nil
 }
@@ -65,7 +66,7 @@ func TestAvailabilityPastDateGraceful(t *testing.T) {
 		scheduleRepo: &mockScheduleRepo{schedule: nil},
 	}
 
-	controller := NewFieldController(uow)
+	controller := controllers.NewFieldController(uow)
 	ctx := context.Background()
 
 	// Tanggal di masa lalu (misal 2020-01-01)
@@ -82,13 +83,13 @@ func TestAvailabilityPastDateGraceful(t *testing.T) {
 }
 
 func TestAvailabilityTodayPassedHours(t *testing.T) {
-	baseTime := time.Date(2026, 10, 17, 14, 30, 0, 0, time.Local)
-	timeNow = func() time.Time {
-		return baseTime
+	baseTime := time.Now()
+	if baseTime.Hour() == 0 {
+		t.Skip("cannot check a passed same-day hourly slot before 01:00")
 	}
-	defer func() {
-		timeNow = time.Now
-	}()
+	pastHour := time.Date(baseTime.Year(), baseTime.Month(), baseTime.Day(), baseTime.Hour()-1, 0, 0, 0, baseTime.Location()).Format("15:04")
+	nextHour := time.Date(baseTime.Year(), baseTime.Month(), baseTime.Day(), baseTime.Hour()+1, 0, 0, 0, baseTime.Location()).Format("15:04")
+	closeTime := "23:00"
 
 	mockF := &models.Field{
 		ID:           1,
@@ -98,9 +99,9 @@ func TestAvailabilityTodayPassedHours(t *testing.T) {
 	}
 	mockSched := &models.Schedule{
 		FieldID:   1,
-		Day:       models.DaySaturday,
-		OpenTime:  "08:00",
-		CloseTime: "22:00",
+		Day:       models.DayFromWeekday(baseTime.Weekday()),
+		OpenTime:  "00:00",
+		CloseTime: closeTime,
 		IsClosed:  false,
 	}
 
@@ -112,7 +113,7 @@ func TestAvailabilityTodayPassedHours(t *testing.T) {
 		},
 	}
 
-	controller := NewFieldController(uow)
+	controller := controllers.NewFieldController(uow)
 	ctx := context.Background()
 
 	todayStr := baseTime.Format("2006-01-02")
@@ -125,28 +126,30 @@ func TestAvailabilityTodayPassedHours(t *testing.T) {
 		t.Fatalf("expected IsOpen to be true for open schedule")
 	}
 
-	// Slot jam 08:00-09:00 harusnya sudah lewat (now = 14:30), jadi available: false
 	foundPassedSlot := false
 	foundFutureSlot := false
 	for _, slot := range res.Slots {
-		if slot.StartTime == "08:00" {
+		if slot.StartTime == pastHour {
 			foundPassedSlot = true
 			if slot.Available {
-				t.Errorf("slot 08:00 should not be available because time has passed")
+				t.Errorf("slot %s should not be available because time has passed", pastHour)
 			}
 			if slot.Reason != "time has passed" {
 				t.Errorf("expected reason 'time has passed', got '%s'", slot.Reason)
 			}
 		}
-		if slot.StartTime == "15:00" {
+		if slot.StartTime == nextHour && baseTime.Hour() < 22 {
 			foundFutureSlot = true
 			if !slot.Available {
-				t.Errorf("slot 15:00 should be available")
+				t.Errorf("slot %s should be available", nextHour)
 			}
 		}
 	}
 
-	if !foundPassedSlot || !foundFutureSlot {
-		t.Errorf("did not find expected slots in availability response")
+	if !foundPassedSlot {
+		t.Errorf("did not find expected passed slot %s in availability response", pastHour)
+	}
+	if baseTime.Hour() < 22 && !foundFutureSlot {
+		t.Errorf("did not find expected future slot %s in availability response", nextHour)
 	}
 }
