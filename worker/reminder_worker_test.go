@@ -19,6 +19,10 @@ func (m *mockReminderRepo) CreateJobs(ctx context.Context, jobs []models.Reminde
 	return nil
 }
 
+func (m *mockReminderRepo) RescheduleJobs(ctx context.Context, bookingID uint, jobs []models.ReminderJob) error {
+	return nil
+}
+
 func (m *mockReminderRepo) FindDueJobs(ctx context.Context, now time.Time, limit int64) ([]models.ReminderJob, error) {
 	return m.dueJobs, nil
 }

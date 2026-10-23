@@ -50,23 +50,37 @@ func SlotBlockingStatuses() []string {
 
 // Booking adalah pemesanan slot lapangan oleh user.
 type Booking struct {
-	ID          uint          `gorm:"primaryKey" json:"id"`
-	BookingCode string        `gorm:"type:varchar(30);not null;uniqueIndex" json:"booking_code"`
-	UserID      uint          `gorm:"not null;index" json:"user_id"`
-	FieldID     uint          `gorm:"not null;index:idx_booking_field_date" json:"field_id"`
-	BookingDate time.Time     `gorm:"type:date;not null;index:idx_booking_field_date" json:"booking_date"`
-	StartTime   string        `gorm:"type:varchar(5);not null" json:"start_time"`
-	EndTime     string        `gorm:"type:varchar(5);not null" json:"end_time"`
-	Duration    int           `gorm:"not null" json:"duration"`
-	TotalPrice  float64       `gorm:"type:numeric(12,2);not null" json:"total_price"`
-	Status      BookingStatus `gorm:"type:varchar(20);not null;index" json:"status"`
-	Notes       string        `gorm:"type:text" json:"notes"`
-	CancelledAt *time.Time    `json:"cancelled_at,omitempty"`
-	CreatedAt   time.Time     `json:"created_at"`
-	UpdatedAt   time.Time     `json:"updated_at"`
+	ID                   uint                    `gorm:"primaryKey" json:"id"`
+	BookingCode          string                  `gorm:"type:varchar(30);not null;uniqueIndex" json:"booking_code"`
+	UserID               uint                    `gorm:"not null;index" json:"user_id"`
+	FieldID              uint                    `gorm:"not null;index:idx_booking_field_date" json:"field_id"`
+	BookingDate          time.Time               `gorm:"type:date;not null;index:idx_booking_field_date" json:"booking_date"`
+	StartTime            string                  `gorm:"type:varchar(5);not null" json:"start_time"`
+	EndTime              string                  `gorm:"type:varchar(5);not null" json:"end_time"`
+	Duration             int                     `gorm:"not null" json:"duration"`
+	TotalPrice           float64                 `gorm:"type:numeric(12,2);not null" json:"total_price"`
+	Status               BookingStatus           `gorm:"type:varchar(20);not null;index" json:"status"`
+	Notes                string                  `gorm:"type:text" json:"notes"`
+	CancelledAt          *time.Time              `json:"cancelled_at,omitempty"`
+	CancellationReason   string                  `gorm:"type:text" json:"cancellation_reason,omitempty"`
+	RefundReviewRequired bool                    `gorm:"not null;default:false" json:"refund_review_required"`
+	RescheduleHistory    []BookingScheduleChange `gorm:"type:jsonb;serializer:json" json:"-"`
+	CreatedAt            time.Time               `json:"created_at"`
+	UpdatedAt            time.Time               `json:"updated_at"`
 
 	User    *User         `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Field   *Field        `gorm:"foreignKey:FieldID" json:"field,omitempty"`
 	Items   []BookingItem `gorm:"foreignKey:BookingID" json:"items,omitempty"`
 	Payment *Payment      `gorm:"foreignKey:BookingID" json:"payment,omitempty"`
+}
+
+// BookingScheduleChange records a committed schedule change for audit purposes.
+type BookingScheduleChange struct {
+	PreviousDate      string    `json:"previous_date"`
+	PreviousStartTime string    `json:"previous_start_time"`
+	PreviousEndTime   string    `json:"previous_end_time"`
+	NewDate           string    `json:"new_date"`
+	NewStartTime      string    `json:"new_start_time"`
+	NewEndTime        string    `json:"new_end_time"`
+	ChangedAt         time.Time `json:"changed_at"`
 }

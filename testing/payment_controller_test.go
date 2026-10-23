@@ -71,6 +71,10 @@ func (r *testBookingRepo) Update(ctx context.Context, booking *models.Booking) e
 	r.updatedWith = booking
 	return nil
 }
+func (r *testBookingRepo) UpdateSchedule(ctx context.Context, booking *models.Booking) error {
+	r.updatedWith = booking
+	return nil
+}
 func (r *testBookingRepo) FindByID(ctx context.Context, id uint) (*models.Booking, error) {
 	if r.booking != nil && r.booking.ID == id {
 		return r.booking, nil
@@ -78,6 +82,9 @@ func (r *testBookingRepo) FindByID(ctx context.Context, id uint) (*models.Bookin
 	return nil, apperror.NotFound("booking not found")
 }
 func (r *testBookingRepo) FindDetailByID(ctx context.Context, id uint) (*models.Booking, error) {
+	return r.FindByID(ctx, id)
+}
+func (r *testBookingRepo) FindDetailByIDForUpdate(ctx context.Context, id uint) (*models.Booking, error) {
 	return r.FindByID(ctx, id)
 }
 func (r *testBookingRepo) FindByCode(ctx context.Context, code string) (*models.Booking, error) {
@@ -90,6 +97,9 @@ func (r *testBookingRepo) FindActiveByFieldAndDate(ctx context.Context, fieldID 
 	return nil, nil
 }
 func (r *testBookingRepo) HasOverlap(ctx context.Context, fieldID uint, date time.Time, startTime, endTime string) (bool, error) {
+	return false, nil
+}
+func (r *testBookingRepo) HasOverlapExcluding(ctx context.Context, fieldID uint, date time.Time, startTime, endTime string, excludeBookingID uint) (bool, error) {
 	return false, nil
 }
 func (r *testBookingRepo) LockFieldDate(ctx context.Context, fieldID uint, date time.Time) error {

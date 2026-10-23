@@ -56,6 +56,10 @@ export const api = {
   availability: (id, date) => request(`/fields/${id}/availability?date=${encodeURIComponent(date)}`),
   createBooking: (payload) => request("/bookings", { method: "POST", body: JSON.stringify(payload) }),
   booking: (id) => request(`/bookings/${id}`),
+  cancelBooking: (id, reason = "") => request(`/bookings/${id}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(reason ? { reason } : {}),
+  }),
   bookingPayment: (id) => request(`/bookings/${id}/payment`),
   syncPayment: (id) => request(`/bookings/${id}/sync-payment`, { method: "POST" }),
   bookings: (params = {}) => request(`/bookings?${new URLSearchParams(params)}`),

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"time"
 
@@ -32,6 +33,8 @@ type BookingController interface {
 	List(ctx context.Context, actor Actor, query dto.BookingFilterQuery) ([]dto.BookingResponse, int64, error)
 	Detail(ctx context.Context, actor Actor, id uint) (*dto.BookingResponse, error)
 	Cancel(ctx context.Context, actor Actor, id uint) (*dto.BookingResponse, error)
+	CancelWithReason(ctx context.Context, actor Actor, id uint, reason string) (*dto.BookingResponse, error)
+	Reschedule(ctx context.Context, actor Actor, id uint, req dto.RescheduleBookingRequest) (*dto.BookingResponse, error)
 	UpdateStatus(ctx context.Context, id uint, status models.BookingStatus) (*dto.BookingResponse, error)
 	SetNotificationController(nc NotificationController)
 }
@@ -320,69 +323,252 @@ func (c *bookingController) Detail(ctx context.Context, actor Actor, id uint) (*
 	return &response, nil
 }
 
-// Cancel membatalkan booking sesuai aturan: booking yang sudah dibayar hanya
-// dapat dibatalkan user minimal N jam sebelum jam mulai; admin bebas.
+// Cancel preserves the existing controller contract while delegating to the
+// owner-initiated cancellation flow.
 func (c *bookingController) Cancel(ctx context.Context, actor Actor, id uint) (*dto.BookingResponse, error) {
-	booking, err := c.uow.Booking().FindDetailByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if err := ensureBookingOwner(actor, booking); err != nil {
-		return nil, err
-	}
+	return c.CancelWithReason(ctx, actor, id, "")
+}
 
-	switch booking.Status {
-	case models.BookingStatusCancelled:
-		return nil, apperror.Conflict("booking is already cancelled")
-	case models.BookingStatusCompleted, models.BookingStatusExpired:
-		return nil, apperror.Conflict("booking can no longer be cancelled")
-	}
-
-	isPaid := booking.Status == models.BookingStatusPaid || booking.Status == models.BookingStatusConfirmed
-	if isPaid && !actor.IsAdmin() {
-		startAt, convErr := timeutil.CombineDateTime(booking.BookingDate, booking.StartTime)
-		if convErr != nil {
-			return nil, apperror.Internal("failed to read booking schedule", convErr)
+// CancelWithReason cancels an owned booking and preserves paid payment records
+// for manual refund review. All state changes and payment updates are atomic.
+func (c *bookingController) CancelWithReason(ctx context.Context, actor Actor, id uint, reason string) (*dto.BookingResponse, error) {
+	var booking *models.Booking
+	err := c.uow.Atomic(ctx, func(r repository.Registry) error {
+		locked, err := r.Booking().FindDetailByIDForUpdate(ctx, id)
+		if err != nil {
+			return err
 		}
-		limit := time.Duration(c.policy.CancelMinHours) * time.Hour
-		if startAt.Sub(timeNow()) < limit {
-			return nil, apperror.Unprocessable(fmt.Sprintf(
-				"paid booking can only be cancelled at least %d hour(s) before start time", c.policy.CancelMinHours))
+		if locked.UserID != actor.UserID {
+			return apperror.NotFound("booking not found")
 		}
-	}
+		if err := validateBookingCanChange(locked); err != nil {
+			return err
+		}
+		if err := validateCancellationDeadline(locked, c.policy.CancelMinHours, timeNow()); err != nil {
+			return err
+		}
+		if err := r.Booking().LockFieldDate(ctx, locked.FieldID, locked.BookingDate); err != nil {
+			return err
+		}
 
-	err = c.uow.Atomic(ctx, func(r repository.Registry) error {
+		payment, paymentErr := r.Payment().FindByBookingID(ctx, locked.ID)
+		if paymentErr != nil && !apperror.IsNotFound(paymentErr) {
+			return paymentErr
+		}
+
 		now := timeNow()
-		booking.Status = models.BookingStatusCancelled
-		booking.CancelledAt = &now
-		if updateErr := r.Booking().Update(ctx, booking); updateErr != nil {
-			return updateErr
+		locked.Status = models.BookingStatusCancelled
+		locked.CancelledAt = &now
+		locked.CancellationReason = strings.TrimSpace(reason)
+		if payment != nil && payment.Status == models.PaymentStatusPaid {
+			locked.RefundReviewRequired = true
 		}
-
-		payment, findErr := r.Payment().FindByBookingID(ctx, booking.ID)
-		if findErr != nil {
-			if apperror.IsNotFound(findErr) {
-				return nil
-			}
-			return findErr
+		if err := r.Booking().Update(ctx, locked); err != nil {
+			return err
 		}
-		if payment.Status == models.PaymentStatusPending {
+		if payment != nil && payment.Status == models.PaymentStatusPending {
 			payment.Status = models.PaymentStatusFailed
-			return r.Payment().Update(ctx, payment)
+			if err := r.Payment().Update(ctx, payment); err != nil {
+				return err
+			}
 		}
+		locked.Payment = payment
+		booking = locked
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if c.notif != nil {
-		go func() {
-			_ = c.notif.CancelRemindersForBooking(context.Background(), booking.ID)
-		}()
+	c.notifyAfterCommit(ctx, "booking cancellation", booking.ID, func(ctx context.Context) error {
+		return c.notif.CancelRemindersForBooking(ctx, booking.ID)
+	})
+	response := dto.NewBookingResponse(*booking)
+	return &response, nil
+}
+
+// Reschedule validates and saves a new time under transaction-scoped locks.
+// Price-changing requests are rejected because the current payment integration
+// cannot adjust an existing invoice or collect/refund the difference.
+func (c *bookingController) Reschedule(ctx context.Context, actor Actor, id uint, req dto.RescheduleBookingRequest) (*dto.BookingResponse, error) {
+	newDate, err := timeutil.ParseDate(req.BookingDate)
+	if err != nil {
+		return nil, apperror.BadRequest(err.Error())
+	}
+	duration, err := timeutil.DurationHours(req.StartTime, req.EndTime)
+	if err != nil {
+		return nil, apperror.Unprocessable(err.Error())
+	}
+	if duration < c.policy.MinHours {
+		return nil, apperror.Unprocessable(fmt.Sprintf("minimum booking duration is %d hour(s)", c.policy.MinHours))
+	}
+	if duration > c.policy.MaxHours {
+		return nil, apperror.Unprocessable(fmt.Sprintf("maximum booking duration is %d hour(s)", c.policy.MaxHours))
 	}
 
-	return c.Detail(ctx, actor, booking.ID)
+	var booking *models.Booking
+	err = c.uow.Atomic(ctx, func(r repository.Registry) error {
+		locked, err := r.Booking().FindDetailByIDForUpdate(ctx, id)
+		if err != nil {
+			return err
+		}
+		if locked.UserID != actor.UserID {
+			return apperror.NotFound("booking not found")
+		}
+		if err := validateBookingCanChange(locked); err != nil {
+			return err
+		}
+		now := timeNow()
+		if newDate.Before(timeutil.NormalizeDate(now)) {
+			return apperror.Unprocessable("booking_date must not be in the past")
+		}
+		if isPaymentSettled(locked) {
+			if err := validateCancellationDeadline(locked, c.policy.CancelMinHours, now); err != nil {
+				return apperror.Unprocessable("booking is outside the allowed reschedule window")
+			}
+		}
+		startAt, err := timeutil.CombineDateTime(newDate, req.StartTime)
+		if err != nil {
+			return apperror.BadRequest(err.Error())
+		}
+		if !startAt.After(now) {
+			return apperror.Unprocessable("start_time has already passed")
+		}
+
+		field, err := r.Field().FindByID(ctx, locked.FieldID)
+		if err != nil {
+			return err
+		}
+		if !field.IsActive() {
+			return apperror.Unprocessable("field is not available for booking")
+		}
+		day := models.DayFromWeekday(newDate.Weekday())
+		schedule, err := r.Schedule().FindByFieldAndDay(ctx, field.ID, day)
+		if err != nil {
+			if apperror.IsNotFound(err) {
+				return apperror.Unprocessable("field has no operating hours on " + string(day))
+			}
+			return err
+		}
+		if schedule.IsClosed {
+			return apperror.Unprocessable("field is closed on " + string(day))
+		}
+		if !timeutil.Within(req.StartTime, req.EndTime, schedule.OpenTime, schedule.CloseTime) {
+			return apperror.Unprocessable(fmt.Sprintf(
+				"booking time must be within operating hours %s-%s", schedule.OpenTime, schedule.CloseTime))
+		}
+
+		newTotal := field.PricePerHour * float64(duration)
+		if math.Abs(newTotal-locked.TotalPrice) > 0.01 {
+			return apperror.Conflict(fmt.Sprintf(
+				"reschedule would change the total from %.2f to %.2f; payment adjustment is not supported",
+				locked.TotalPrice, newTotal))
+		}
+
+		dates := []time.Time{locked.BookingDate, newDate}
+		if dates[1].Before(dates[0]) {
+			dates[0], dates[1] = dates[1], dates[0]
+		}
+		if err := r.Booking().LockFieldDate(ctx, field.ID, dates[0]); err != nil {
+			return err
+		}
+		if !dates[1].Equal(dates[0]) {
+			if err := r.Booking().LockFieldDate(ctx, field.ID, dates[1]); err != nil {
+				return err
+			}
+		}
+		overlap, err := r.Booking().HasOverlapExcluding(ctx, field.ID, newDate, req.StartTime, req.EndTime, locked.ID)
+		if err != nil {
+			return err
+		}
+		if overlap {
+			return apperror.Conflict("selected time slot is not available")
+		}
+
+		locked.RescheduleHistory = append(locked.RescheduleHistory, models.BookingScheduleChange{
+			PreviousDate:      locked.BookingDate.Format(timeutil.DateLayout),
+			PreviousStartTime: locked.StartTime,
+			PreviousEndTime:   locked.EndTime,
+			NewDate:           newDate.Format(timeutil.DateLayout),
+			NewStartTime:      req.StartTime,
+			NewEndTime:        req.EndTime,
+			ChangedAt:         now,
+		})
+		locked.BookingDate = newDate
+		locked.StartTime = req.StartTime
+		locked.EndTime = req.EndTime
+		locked.Duration = duration
+		locked.Items = buildBookingItems(req.StartTime, req.EndTime, field.PricePerHour)
+		locked.Field = field
+		if err := r.Booking().UpdateSchedule(ctx, locked); err != nil {
+			return err
+		}
+		booking = locked
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	c.notifyAfterCommit(ctx, "booking reschedule", booking.ID, func(ctx context.Context) error {
+		return c.notif.RescheduleBooking(ctx, booking.ID)
+	})
+	response := dto.NewBookingResponse(*booking)
+	return &response, nil
+}
+
+func validateBookingCanChange(booking *models.Booking) error {
+	switch booking.Status {
+	case models.BookingStatusCancelled:
+		return apperror.Conflict("booking is already cancelled")
+	case models.BookingStatusCompleted, models.BookingStatusExpired:
+		return apperror.Conflict("booking can no longer be changed")
+	}
+	startAt, err := timeutil.CombineDateTime(booking.BookingDate, booking.StartTime)
+	if err != nil {
+		return apperror.Internal("failed to read booking schedule", err)
+	}
+	if !startAt.After(timeNow()) {
+		return apperror.Unprocessable("booking has already started")
+	}
+	return nil
+}
+
+func isPaymentSettled(booking *models.Booking) bool {
+	return booking.Status == models.BookingStatusPaid ||
+		booking.Status == models.BookingStatusConfirmed ||
+		(booking.Payment != nil && booking.Payment.Status == models.PaymentStatusPaid)
+}
+
+func validateCancellationDeadline(booking *models.Booking, minHours int, now time.Time) error {
+	if !isPaymentSettled(booking) {
+		return nil
+	}
+	startAt, err := timeutil.CombineDateTime(booking.BookingDate, booking.StartTime)
+	if err != nil {
+		return apperror.Internal("failed to read booking schedule", err)
+	}
+	if startAt.Sub(now) < time.Duration(minHours)*time.Hour {
+		return apperror.Unprocessable(fmt.Sprintf(
+			"paid booking can only be cancelled or rescheduled at least %d hour(s) before start time", minHours))
+	}
+	return nil
+}
+
+func (c *bookingController) notifyAfterCommit(
+	ctx context.Context,
+	action string,
+	bookingID uint,
+	notify func(context.Context) error,
+) {
+	if c.notif == nil {
+		return
+	}
+	notifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := notify(notifyCtx); err != nil {
+		log.Printf("booking: %s committed but notification update failed for booking %d: %v", action, bookingID, err)
+	}
 }
 
 // UpdateStatus mengubah status booking dari panel admin.

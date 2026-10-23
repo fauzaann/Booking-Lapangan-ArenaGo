@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
@@ -26,12 +27,15 @@ type BookingFilter struct {
 type BookingRepository interface {
 	Create(ctx context.Context, booking *models.Booking) error
 	Update(ctx context.Context, booking *models.Booking) error
+	UpdateSchedule(ctx context.Context, booking *models.Booking) error
 	FindByID(ctx context.Context, id uint) (*models.Booking, error)
 	FindDetailByID(ctx context.Context, id uint) (*models.Booking, error)
+	FindDetailByIDForUpdate(ctx context.Context, id uint) (*models.Booking, error)
 	FindByCode(ctx context.Context, code string) (*models.Booking, error)
 	FindAll(ctx context.Context, filter BookingFilter) ([]models.Booking, int64, error)
 	FindActiveByFieldAndDate(ctx context.Context, fieldID uint, date time.Time) ([]models.Booking, error)
 	HasOverlap(ctx context.Context, fieldID uint, date time.Time, startTime, endTime string) (bool, error)
+	HasOverlapExcluding(ctx context.Context, fieldID uint, date time.Time, startTime, endTime string, excludeBookingID uint) (bool, error)
 	LockFieldDate(ctx context.Context, fieldID uint, date time.Time) error
 	NextSequence(ctx context.Context, date time.Time) (int, error)
 	Count(ctx context.Context) (int64, error)
@@ -63,6 +67,27 @@ func (r *bookingRepository) Update(ctx context.Context, booking *models.Booking)
 	return translate(err, "booking not found")
 }
 
+// UpdateSchedule updates the booking row and replaces its hourly line items.
+// Callers must invoke it inside UnitOfWork.Atomic.
+func (r *bookingRepository) UpdateSchedule(ctx context.Context, booking *models.Booking) error {
+	db := r.db.WithContext(ctx)
+	if err := db.Omit("User", "Field", "Items", "Payment").Save(booking).Error; err != nil {
+		return translate(err, "booking not found")
+	}
+	if err := db.Where("booking_id = ?", booking.ID).Delete(&models.BookingItem{}).Error; err != nil {
+		return translate(err, "booking item not found")
+	}
+	for i := range booking.Items {
+		booking.Items[i].BookingID = booking.ID
+	}
+	if len(booking.Items) > 0 {
+		if err := db.Create(&booking.Items).Error; err != nil {
+			return translate(err, "booking item not found")
+		}
+	}
+	return nil
+}
+
 // FindByID mengambil booking tanpa preload relasi.
 func (r *bookingRepository) FindByID(ctx context.Context, id uint) (*models.Booking, error) {
 	var booking models.Booking
@@ -76,6 +101,22 @@ func (r *bookingRepository) FindByID(ctx context.Context, id uint) (*models.Book
 func (r *bookingRepository) FindDetailByID(ctx context.Context, id uint) (*models.Booking, error) {
 	var booking models.Booking
 	err := r.db.WithContext(ctx).
+		Preload("Field").
+		Preload("User").
+		Preload("Items").
+		Preload("Payment").
+		First(&booking, id).Error
+	if err != nil {
+		return nil, translate(err, "booking not found")
+	}
+	return &booking, nil
+}
+
+// FindDetailByIDForUpdate locks the booking row for the lifetime of the caller's transaction.
+func (r *bookingRepository) FindDetailByIDForUpdate(ctx context.Context, id uint) (*models.Booking, error) {
+	var booking models.Booking
+	err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Preload("Field").
 		Preload("User").
 		Preload("Items").
@@ -163,6 +204,22 @@ func (r *bookingRepository) HasOverlap(ctx context.Context, fieldID uint, date t
 	var count int64
 	err := r.db.WithContext(ctx).Model(&models.Booking{}).
 		Where("field_id = ? AND booking_date = ?", fieldID, date).
+		Where("status IN ?", models.SlotBlockingStatuses()).
+		Where("start_time < ? AND end_time > ?", endTime, startTime).
+		Count(&count).Error
+	if err != nil {
+		return false, translate(err, "booking not found")
+	}
+	return count > 0, nil
+}
+
+// HasOverlapExcluding checks for another blocking booking while ignoring the
+// booking currently being rescheduled.
+func (r *bookingRepository) HasOverlapExcluding(ctx context.Context, fieldID uint, date time.Time, startTime, endTime string, excludeBookingID uint) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&models.Booking{}).
+		Where("field_id = ? AND booking_date = ?", fieldID, date).
+		Where("id <> ?", excludeBookingID).
 		Where("status IN ?", models.SlotBlockingStatuses()).
 		Where("start_time < ? AND end_time > ?", endTime, startTime).
 		Count(&count).Error

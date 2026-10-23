@@ -19,13 +19,13 @@ import (
 // Dependencies adalah seluruh komponen yang dibutuhkan router.
 // Semua di-inject dari main.go (dependency injection).
 type Dependencies struct {
-	Config    *config.Config
-	JWT       jwt.Manager
-	Auth      *handler.AuthHandler
-	User      *handler.UserHandler
-	Field     *handler.FieldHandler
-	Schedule  *handler.ScheduleHandler
-	Booking   *handler.BookingHandler
+	Config       *config.Config
+	JWT          jwt.Manager
+	Auth         *handler.AuthHandler
+	User         *handler.UserHandler
+	Field        *handler.FieldHandler
+	Schedule     *handler.ScheduleHandler
+	Booking      *handler.BookingHandler
 	Payment      *handler.PaymentHandler
 	Assistant    *handler.AssistantHandler
 	Admin        *handler.AdminHandler
@@ -87,6 +87,8 @@ func New(deps Dependencies) *gin.Engine {
 		bookings.GET("/:id", deps.Booking.Detail)
 		bookings.GET("/:id/payment", deps.Payment.DetailByBooking)
 		bookings.POST("/:id/sync-payment", deps.Payment.SyncPayment)
+		bookings.POST("/:id/cancel", deps.Booking.CancelPost)
+		bookings.PATCH("/:id/reschedule", deps.Booking.Reschedule)
 		bookings.DELETE("/:id", deps.Booking.Cancel)
 	}
 

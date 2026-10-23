@@ -17,6 +17,18 @@ type CreateBookingRequest struct {
 	Notes       string `json:"notes" validate:"omitempty,max=255"`
 }
 
+// CancelBookingRequest optionally records why the owner cancelled a booking.
+type CancelBookingRequest struct {
+	Reason string `json:"reason" validate:"omitempty,max=255"`
+}
+
+// RescheduleBookingRequest contains the replacement date and time.
+type RescheduleBookingRequest struct {
+	BookingDate string `json:"booking_date" validate:"required,dateonly,notpast"`
+	StartTime   string `json:"start_time" validate:"required,clock"`
+	EndTime     string `json:"end_time" validate:"required,clock"`
+}
+
 // BookingFilterQuery adalah query string daftar booking.
 type BookingFilterQuery struct {
 	PaginationQuery
@@ -41,21 +53,24 @@ type BookingItemResponse struct {
 
 // BookingResponse adalah representasi booking untuk client.
 type BookingResponse struct {
-	ID          uint                  `json:"id"`
-	BookingCode string                `json:"booking_code"`
-	UserID      uint                  `json:"user_id"`
-	FieldID     uint                  `json:"field_id"`
-	FieldName   string                `json:"field_name,omitempty"`
-	BookingDate string                `json:"booking_date"`
-	StartTime   string                `json:"start_time"`
-	EndTime     string                `json:"end_time"`
-	Duration    int                   `json:"duration"`
-	TotalPrice  float64               `json:"total_price"`
-	Status      string                `json:"status"`
-	Notes       string                `json:"notes,omitempty"`
-	Items       []BookingItemResponse `json:"items,omitempty"`
-	Payment     *PaymentResponse      `json:"payment,omitempty"`
-	CreatedAt   time.Time             `json:"created_at"`
+	ID                   uint                           `json:"id"`
+	BookingCode          string                         `json:"booking_code"`
+	UserID               uint                           `json:"user_id"`
+	FieldID              uint                           `json:"field_id"`
+	FieldName            string                         `json:"field_name,omitempty"`
+	BookingDate          string                         `json:"booking_date"`
+	StartTime            string                         `json:"start_time"`
+	EndTime              string                         `json:"end_time"`
+	Duration             int                            `json:"duration"`
+	TotalPrice           float64                        `json:"total_price"`
+	Status               string                         `json:"status"`
+	Notes                string                         `json:"notes,omitempty"`
+	CancellationReason   string                         `json:"cancellation_reason,omitempty"`
+	RefundReviewRequired bool                           `json:"refund_review_required"`
+	RescheduleHistory    []models.BookingScheduleChange `json:"reschedule_history,omitempty"`
+	Items                []BookingItemResponse          `json:"items,omitempty"`
+	Payment              *PaymentResponse               `json:"payment,omitempty"`
+	CreatedAt            time.Time                      `json:"created_at"`
 }
 
 // BookingCreatedResponse adalah response ringkas setelah booking dibuat.
@@ -77,18 +92,21 @@ type BookingCreatedResponse struct {
 // NewBookingResponse memetakan model booking menjadi response.
 func NewBookingResponse(booking models.Booking) BookingResponse {
 	response := BookingResponse{
-		ID:          booking.ID,
-		BookingCode: booking.BookingCode,
-		UserID:      booking.UserID,
-		FieldID:     booking.FieldID,
-		BookingDate: booking.BookingDate.Format(timeutil.DateLayout),
-		StartTime:   booking.StartTime,
-		EndTime:     booking.EndTime,
-		Duration:    booking.Duration,
-		TotalPrice:  booking.TotalPrice,
-		Status:      string(booking.Status),
-		Notes:       booking.Notes,
-		CreatedAt:   booking.CreatedAt,
+		ID:                   booking.ID,
+		BookingCode:          booking.BookingCode,
+		UserID:               booking.UserID,
+		FieldID:              booking.FieldID,
+		BookingDate:          booking.BookingDate.Format(timeutil.DateLayout),
+		StartTime:            booking.StartTime,
+		EndTime:              booking.EndTime,
+		Duration:             booking.Duration,
+		TotalPrice:           booking.TotalPrice,
+		Status:               string(booking.Status),
+		Notes:                booking.Notes,
+		CancellationReason:   booking.CancellationReason,
+		RefundReviewRequired: booking.RefundReviewRequired,
+		RescheduleHistory:    booking.RescheduleHistory,
+		CreatedAt:            booking.CreatedAt,
 	}
 
 	if booking.Field != nil {

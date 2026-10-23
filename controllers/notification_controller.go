@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -19,6 +20,7 @@ import (
 type NotificationController interface {
 	ScheduleRemindersForBooking(ctx context.Context, bookingID uint) error
 	CancelRemindersForBooking(ctx context.Context, bookingID uint) error
+	RescheduleBooking(ctx context.Context, bookingID uint) error
 	ListUserNotifications(ctx context.Context, userID uint, page, limit int, unreadOnly bool) ([]models.Notification, int64, error)
 	GetUnreadCount(ctx context.Context, userID uint) (int64, error)
 	MarkAsRead(ctx context.Context, notifIDHex string, userID uint) error
@@ -27,10 +29,10 @@ type NotificationController interface {
 }
 
 type notificationController struct {
-	uow            repository.UnitOfWork
-	notifRepo      repository.NotificationRepository
-	reminderRepo   repository.ReminderRepository
-	mongoCfg       config.MongoConfig
+	uow          repository.UnitOfWork
+	notifRepo    repository.NotificationRepository
+	reminderRepo repository.ReminderRepository
+	mongoCfg     config.MongoConfig
 }
 
 // NewNotificationController membuat controller notifikasi.
@@ -60,76 +62,10 @@ func (c *notificationController) ScheduleRemindersForBooking(ctx context.Context
 		return fmt.Errorf("failed to fetch booking details for reminder: %w", err)
 	}
 
-	playTime, err := timeutil.CombineDateTime(booking.BookingDate, booking.StartTime)
-	if err != nil {
-		return fmt.Errorf("invalid booking schedule: %w", err)
-	}
-
 	now := timeNow()
-	var jobs []models.ReminderJob
-
-	userName := ""
-	userEmail := ""
-	userPhone := ""
-	if booking.User != nil {
-		userName = booking.User.Name
-		userEmail = booking.User.Email
-		userPhone = booking.User.Phone
-	}
-
-	fieldName := ""
-	if booking.Field != nil {
-		fieldName = booking.Field.Name
-	}
-
-	// 1. Pengingat H-24 Jam
-	if c.mongoCfg.ReminderH24 {
-		h24Scheduled := playTime.Add(-24 * time.Hour)
-		if h24Scheduled.After(now) {
-			jobs = append(jobs, models.ReminderJob{
-				BookingID:    booking.ID,
-				BookingCode:  booking.BookingCode,
-				UserID:       booking.UserID,
-				UserName:     userName,
-				UserEmail:    userEmail,
-				UserPhone:    userPhone,
-				FieldID:      booking.FieldID,
-				FieldName:    fieldName,
-				BookingDate:  booking.BookingDate,
-				StartTime:    booking.StartTime,
-				EndTime:      booking.EndTime,
-				PlayTime:     playTime,
-				ReminderType: models.ReminderTypeH24,
-				ScheduledFor: h24Scheduled,
-				Status:       models.ReminderStatusScheduled,
-				CreatedAt:    now,
-			})
-		}
-	}
-
-	// 2. Pengingat H-2 Jam
-	if c.mongoCfg.ReminderH2 {
-		h2Scheduled := playTime.Add(-2 * time.Hour)
-		if h2Scheduled.After(now) {
-			jobs = append(jobs, models.ReminderJob{
-				BookingID:    booking.ID,
-				BookingCode:  booking.BookingCode,
-				UserID:       booking.UserID,
-				UserName:     userName,
-				UserEmail:    userEmail,
-				UserPhone:    userPhone,
-				FieldID:      booking.FieldID,
-				FieldName:    fieldName,
-				BookingDate:  booking.BookingDate,
-				StartTime:    booking.StartTime,
-				EndTime:      booking.EndTime,
-				PlayTime:     playTime,
-				ReminderType: models.ReminderTypeH2,
-				ScheduledFor: h2Scheduled,
-				Status:       models.ReminderStatusScheduled,
-				CreatedAt:    now,
-			})
-		}
+	jobs, err := c.buildReminderJobs(booking, now)
+	if err != nil {
+		return err
 	}
 
 	if len(jobs) > 0 {
@@ -143,6 +79,10 @@ func (c *notificationController) ScheduleRemindersForBooking(ctx context.Context
 	// Buat notifikasi in-app langsung bahwa booking telah dikonfirmasi
 	if c.notifRepo != nil {
 		dateStr := booking.BookingDate.Format("02 Jan 2006")
+		fieldName := ""
+		if booking.Field != nil {
+			fieldName = booking.Field.Name
+		}
 		_ = c.notifRepo.Create(ctx, &models.Notification{
 			UserID:      booking.UserID,
 			BookingID:   booking.ID,
@@ -169,32 +109,131 @@ func (c *notificationController) ScheduleRemindersForBooking(ctx context.Context
 
 // CancelRemindersForBooking membatalkan antrean reminder di MongoDB saat booking CANCELLED.
 func (c *notificationController) CancelRemindersForBooking(ctx context.Context, bookingID uint) error {
+	var result error
 	if c.reminderRepo != nil {
 		if err := c.reminderRepo.CancelByBookingID(ctx, bookingID); err != nil {
 			log.Printf("notification: failed to cancel reminder jobs for booking %d: %v", bookingID, err)
+			result = errors.Join(result, err)
 		}
 	}
 
 	if c.notifRepo != nil {
 		booking, err := c.uow.Booking().FindByID(ctx, bookingID)
-		if err == nil && booking != nil {
+		if err != nil {
+			result = errors.Join(result, fmt.Errorf("failed to load cancelled booking %d for notification: %w", bookingID, err))
+		} else if booking == nil {
+			result = errors.Join(result, fmt.Errorf("cancelled booking %d was not found for notification", bookingID))
+		} else {
 			now := timeNow()
-			_ = c.notifRepo.Create(ctx, &models.Notification{
+			message := fmt.Sprintf("Jadwal booking Anda dengan kode %s telah dibatalkan.", booking.BookingCode)
+			if booking.RefundReviewRequired {
+				message += " Pembayaran yang sudah diterima tidak dikembalikan otomatis dan perlu ditinjau untuk proses refund."
+			}
+			if createErr := c.notifRepo.Create(ctx, &models.Notification{
 				UserID:      booking.UserID,
 				BookingID:   booking.ID,
 				BookingCode: booking.BookingCode,
 				Title:       "Booking Dibatalkan",
-				Message:     fmt.Sprintf("Jadwal booking Anda dengan kode %s telah dibatalkan.", booking.BookingCode),
+				Message:     message,
 				Type:        models.NotificationTypeBookingCancelled,
 				Channels:    []string{models.NotificationChannelInApp},
 				IsRead:      false,
 				CreatedAt:   now,
 				ExpiresAt:   now.AddDate(0, 1, 0),
-			})
+			}); createErr != nil {
+				result = errors.Join(result, createErr)
+			}
 		}
 	}
 
-	return nil
+	return result
+}
+
+// RescheduleBooking refreshes pending reminders and creates one in-app
+// notification after the PostgreSQL booking change has committed.
+func (c *notificationController) RescheduleBooking(ctx context.Context, bookingID uint) error {
+	booking, err := c.uow.Booking().FindDetailByID(ctx, bookingID)
+	if err != nil {
+		return fmt.Errorf("failed to load rescheduled booking %d: %w", bookingID, err)
+	}
+	if c.reminderRepo != nil {
+		var jobs []models.ReminderJob
+		if booking.Status == models.BookingStatusPaid || booking.Status == models.BookingStatusConfirmed {
+			jobs, err = c.buildReminderJobs(booking, timeNow())
+			if err != nil {
+				return err
+			}
+		}
+		if err := c.reminderRepo.RescheduleJobs(ctx, bookingID, jobs); err != nil {
+			return err
+		}
+	}
+	if c.notifRepo == nil {
+		return nil
+	}
+	now := timeNow()
+	dateStr := booking.BookingDate.Format("02 Jan 2006")
+	fieldName := ""
+	if booking.Field != nil {
+		fieldName = booking.Field.Name
+	}
+	return c.notifRepo.Create(ctx, &models.Notification{
+		UserID:      booking.UserID,
+		BookingID:   booking.ID,
+		BookingCode: booking.BookingCode,
+		Title:       "Jadwal Booking Diubah",
+		Message:     fmt.Sprintf("Jadwal booking %s telah diubah menjadi %s pukul %s-%s WIB.", booking.BookingCode, dateStr, booking.StartTime, booking.EndTime),
+		Type:        models.NotificationTypeBookingRescheduled,
+		Channels:    []string{models.NotificationChannelInApp},
+		IsRead:      false,
+		Data: map[string]any{
+			"booking_code": booking.BookingCode,
+			"field_name":   fieldName,
+			"date":         dateStr,
+			"start_time":   booking.StartTime,
+			"end_time":     booking.EndTime,
+		},
+		CreatedAt: now,
+		ExpiresAt: now.AddDate(0, 1, 0),
+	})
+}
+
+func (c *notificationController) buildReminderJobs(booking *models.Booking, now time.Time) ([]models.ReminderJob, error) {
+	playTime, err := timeutil.CombineDateTime(booking.BookingDate, booking.StartTime)
+	if err != nil {
+		return nil, fmt.Errorf("invalid booking schedule: %w", err)
+	}
+	userName, userEmail, userPhone := "", "", ""
+	if booking.User != nil {
+		userName, userEmail, userPhone = booking.User.Name, booking.User.Email, booking.User.Phone
+	}
+	fieldName := ""
+	if booking.Field != nil {
+		fieldName = booking.Field.Name
+	}
+
+	jobs := make([]models.ReminderJob, 0, 2)
+	for _, reminder := range []struct {
+		enabled bool
+		kind    string
+		lead    time.Duration
+	}{
+		{c.mongoCfg.ReminderH24, models.ReminderTypeH24, 24 * time.Hour},
+		{c.mongoCfg.ReminderH2, models.ReminderTypeH2, 2 * time.Hour},
+	} {
+		scheduledFor := playTime.Add(-reminder.lead)
+		if reminder.enabled && scheduledFor.After(now) {
+			jobs = append(jobs, models.ReminderJob{
+				BookingID: booking.ID, BookingCode: booking.BookingCode,
+				UserID: booking.UserID, UserName: userName, UserEmail: userEmail, UserPhone: userPhone,
+				FieldID: booking.FieldID, FieldName: fieldName, BookingDate: booking.BookingDate,
+				StartTime: booking.StartTime, EndTime: booking.EndTime, PlayTime: playTime,
+				ReminderType: reminder.kind, ScheduledFor: scheduledFor,
+				Status: models.ReminderStatusScheduled, CreatedAt: now,
+			})
+		}
+	}
+	return jobs, nil
 }
 
 // ListUserNotifications mengambil notifikasi inbox untuk user yang sedang login.

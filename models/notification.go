@@ -23,9 +23,10 @@ const (
 
 // Tipe notifikasi inbox.
 const (
-	NotificationTypeReminderMatch    = "REMINDER_MATCH"
-	NotificationTypeBookingConfirmed = "BOOKING_CONFIRMED"
-	NotificationTypeBookingCancelled = "BOOKING_CANCELLED"
+	NotificationTypeReminderMatch      = "REMINDER_MATCH"
+	NotificationTypeBookingConfirmed   = "BOOKING_CONFIRMED"
+	NotificationTypeBookingCancelled   = "BOOKING_CANCELLED"
+	NotificationTypeBookingRescheduled = "BOOKING_RESCHEDULED"
 )
 
 // Channel notifikasi.
@@ -52,7 +53,7 @@ type ReminderJob struct {
 	PlayTime     time.Time     `bson:"play_time" json:"play_time"`
 	ReminderType string        `bson:"reminder_type" json:"reminder_type"` // H_24, H_2
 	ScheduledFor time.Time     `bson:"scheduled_for" json:"scheduled_for"`
-	Status       string        `bson:"status" json:"status"`               // SCHEDULED, PROCESSING, SENT, FAILED, CANCELLED
+	Status       string        `bson:"status" json:"status"` // SCHEDULED, PROCESSING, SENT, FAILED, CANCELLED
 	RetryCount   int           `bson:"retry_count" json:"retry_count"`
 	MaxRetries   int           `bson:"max_retries" json:"max_retries"`
 	SentAt       *time.Time    `bson:"sent_at,omitempty" json:"sent_at,omitempty"`

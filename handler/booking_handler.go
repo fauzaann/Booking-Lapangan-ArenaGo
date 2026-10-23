@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"errors"
+	"io"
+
 	"github.com/gin-gonic/gin"
 
 	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/dto"
 	"Booking-Lapangan/middleware"
 	"Booking-Lapangan/models"
+	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/response"
 	"Booking-Lapangan/pkg/validator"
 )
@@ -87,6 +91,52 @@ func (h *BookingHandler) Cancel(c *gin.Context) {
 		return
 	}
 	response.OK(c, "Booking cancelled", booking)
+}
+
+// CancelPost handles POST /api/v1/bookings/:id/cancel.
+func (h *BookingHandler) CancelPost(c *gin.Context) {
+	id, ok := uintParam(c, "id")
+	if !ok {
+		return
+	}
+
+	var req dto.CancelBookingRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		response.Error(c, apperror.BadRequest("invalid request body: "+err.Error()))
+		return
+	}
+	if fields := h.validate.Validate(&req); fields != nil {
+		response.ValidationFailed(c, fields)
+		return
+	}
+
+	actor := middleware.MustActor(c)
+	booking, err := h.bookings.CancelWithReason(c.Request.Context(), actor, id, req.Reason)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, "Booking cancelled", booking)
+}
+
+// Reschedule handles PATCH /api/v1/bookings/:id/reschedule.
+func (h *BookingHandler) Reschedule(c *gin.Context) {
+	id, ok := uintParam(c, "id")
+	if !ok {
+		return
+	}
+	var req dto.RescheduleBookingRequest
+	if !h.bindJSON(c, &req) {
+		return
+	}
+
+	actor := middleware.MustActor(c)
+	booking, err := h.bookings.Reschedule(c.Request.Context(), actor, id, req)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, "Booking rescheduled", booking)
 }
 
 // UpdateStatus menangani PATCH /api/v1/admin/bookings/:id/status.

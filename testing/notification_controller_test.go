@@ -31,6 +31,13 @@ func (m *mockReminderRepo) CreateJobs(ctx context.Context, jobs []models.Reminde
 	return nil
 }
 
+func (m *mockReminderRepo) RescheduleJobs(ctx context.Context, bookingID uint, jobs []models.ReminderJob) error {
+	for _, job := range jobs {
+		m.createdJobs = append(m.createdJobs, job)
+	}
+	return nil
+}
+
 func (m *mockReminderRepo) FindDueJobs(ctx context.Context, now time.Time, limit int64) ([]models.ReminderJob, error) {
 	return nil, nil
 }
@@ -109,15 +116,38 @@ func (m *mockNotifRepo) EnsureIndexes(ctx context.Context) error {
 
 // mockBookingRepo implements repository.BookingRepository minimal for test
 type mockBookingRepo struct {
-	booking *models.Booking
+	booking         *models.Booking
+	overlap         bool
+	updateErr       error
+	lockErr         error
+	overlapErr      error
+	lockedDates     []time.Time
+	updatedSchedule bool
 }
 
 func (m *mockBookingRepo) Create(ctx context.Context, booking *models.Booking) error { return nil }
-func (m *mockBookingRepo) Update(ctx context.Context, booking *models.Booking) error { return nil }
+func (m *mockBookingRepo) Update(ctx context.Context, booking *models.Booking) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	m.booking = booking
+	return nil
+}
+func (m *mockBookingRepo) UpdateSchedule(ctx context.Context, booking *models.Booking) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	m.booking = booking
+	m.updatedSchedule = true
+	return nil
+}
 func (m *mockBookingRepo) FindByID(ctx context.Context, id uint) (*models.Booking, error) {
 	return m.booking, nil
 }
 func (m *mockBookingRepo) FindDetailByID(ctx context.Context, id uint) (*models.Booking, error) {
+	return m.booking, nil
+}
+func (m *mockBookingRepo) FindDetailByIDForUpdate(ctx context.Context, id uint) (*models.Booking, error) {
 	return m.booking, nil
 }
 func (m *mockBookingRepo) FindByCode(ctx context.Context, code string) (*models.Booking, error) {
@@ -130,10 +160,14 @@ func (m *mockBookingRepo) FindActiveByFieldAndDate(ctx context.Context, fieldID 
 	return nil, nil
 }
 func (m *mockBookingRepo) HasOverlap(ctx context.Context, fieldID uint, date time.Time, startTime, endTime string) (bool, error) {
-	return false, nil
+	return m.overlap, m.overlapErr
 }
 func (m *mockBookingRepo) LockFieldDate(ctx context.Context, fieldID uint, date time.Time) error {
-	return nil
+	m.lockedDates = append(m.lockedDates, date)
+	return m.lockErr
+}
+func (m *mockBookingRepo) HasOverlapExcluding(ctx context.Context, fieldID uint, date time.Time, startTime, endTime string, excludeBookingID uint) (bool, error) {
+	return m.overlap, m.overlapErr
 }
 func (m *mockBookingRepo) NextSequence(ctx context.Context, date time.Time) (int, error) {
 	return 1, nil

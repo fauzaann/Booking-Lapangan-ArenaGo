@@ -389,6 +389,10 @@ Sehingga existing `10:00–12:00` vs request `11:00–13:00` **ditolak**, sedang
 
 **Pembatalan:** booking `PENDING`/`WAITING_PAYMENT` bebas dibatalkan. Booking `PAID`/`CONFIRMED` hanya bisa dibatalkan user minimal `BOOKING_CANCEL_MIN_HOUR` (default 24) jam sebelum jam mulai; admin tidak dibatasi.
 
+Pengguna yang login dapat membatalkan booking melalui `POST /api/v1/bookings/:id/cancel` (opsional `{"reason":"..."}`); `DELETE /api/v1/bookings/:id` tetap tersedia. Booking `CANCELLED`, `COMPLETED`, `EXPIRED`, atau yang sudah dimulai tidak dapat dibatalkan melalui alur pengguna. Pembayaran `PAID` tidak otomatis direfund dan respons booking menandai `refund_review_required` untuk peninjauan manual.
+
+Perubahan jadwal tersedia melalui `PATCH /api/v1/bookings/:id/reschedule` dengan `booking_date`, `start_time`, dan `end_time`. Perubahan harus mengikuti jam operasional dan durasi yang berlaku, slot tujuan harus tersedia, dan tanggal/jam mulai tidak boleh sudah lewat. Untuk booking yang sudah dibayar, batas waktu `BOOKING_CANCEL_MIN_HOUR` juga berlaku. Jika tarif baru berbeda dari tagihan tersimpan, perubahan ditolak karena penyesuaian invoice/refund belum tersedia. Histori jadwal disimpan bersama booking; pengingat dan notifikasi diperbarui setelah transaksi PostgreSQL berhasil.
+
 ## Alur Pembayaran & Webhook Xendit
 
 ```

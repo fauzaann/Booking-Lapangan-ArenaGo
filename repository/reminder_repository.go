@@ -16,6 +16,7 @@ import (
 // ReminderRepository adalah kontrak akses data job pengingat jadwal di MongoDB.
 type ReminderRepository interface {
 	CreateJobs(ctx context.Context, jobs []models.ReminderJob) error
+	RescheduleJobs(ctx context.Context, bookingID uint, jobs []models.ReminderJob) error
 	FindDueJobs(ctx context.Context, now time.Time, limit int64) ([]models.ReminderJob, error)
 	UpdateStatus(ctx context.Context, id bson.ObjectID, status string, sentAt *time.Time, errMsg string) error
 	IncrementRetry(ctx context.Context, id bson.ObjectID, errMsg string) error
@@ -85,6 +86,70 @@ func (r *reminderRepository) CreateJobs(ctx context.Context, jobs []models.Remin
 		}
 	}
 
+	return nil
+}
+
+// RescheduleJobs refreshes pending reminder documents and keeps already-sent
+// reminders immutable.
+func (r *reminderRepository) RescheduleJobs(ctx context.Context, bookingID uint, jobs []models.ReminderJob) error {
+	types := make([]string, 0, len(jobs))
+	now := time.Now()
+	for _, job := range jobs {
+		if job.CreatedAt.IsZero() {
+			job.CreatedAt = now
+		}
+		types = append(types, job.ReminderType)
+		set := bson.M{
+			"booking_id":    bookingID,
+			"reminder_type": job.ReminderType,
+			"booking_code":  job.BookingCode,
+			"user_id":       job.UserID,
+			"user_name":     job.UserName,
+			"user_email":    job.UserEmail,
+			"user_phone":    job.UserPhone,
+			"field_id":      job.FieldID,
+			"field_name":    job.FieldName,
+			"booking_date":  job.BookingDate,
+			"start_time":    job.StartTime,
+			"end_time":      job.EndTime,
+			"play_time":     job.PlayTime,
+			"scheduled_for": job.ScheduledFor,
+			"status":        models.ReminderStatusScheduled,
+			"retry_count":   0,
+			"max_retries":   3,
+			"error_message": "",
+			"updated_at":    now,
+		}
+		filter := bson.M{
+			"booking_id":    bookingID,
+			"reminder_type": job.ReminderType,
+			"status":        bson.M{"$ne": models.ReminderStatusProcessing},
+		}
+		update := bson.M{
+			"$set":         set,
+			"$unset":       bson.M{"sent_at": ""},
+			"$setOnInsert": bson.M{"created_at": job.CreatedAt},
+		}
+		_, err := r.coll.UpdateOne(ctx, filter, update, options.UpdateOne().SetUpsert(true))
+		if err != nil {
+			return fmt.Errorf("failed to update reminder job for booking %d: %w", bookingID, err)
+		}
+	}
+
+	filter := bson.M{
+		"booking_id": bookingID,
+		"status":     models.ReminderStatusScheduled,
+	}
+	if len(types) > 0 {
+		filter["reminder_type"] = bson.M{"$nin": types}
+	}
+	_, err := r.coll.UpdateMany(ctx, filter, bson.M{"$set": bson.M{
+		"status":     models.ReminderStatusCancelled,
+		"updated_at": now,
+	}})
+	if err != nil {
+		return fmt.Errorf("failed to cancel obsolete reminder jobs for booking %d: %w", bookingID, err)
+	}
 	return nil
 }
 
