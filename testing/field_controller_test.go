@@ -2,28 +2,37 @@ package controllers_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"Booking-Lapangan/controllers"
+	"Booking-Lapangan/dto"
 	"Booking-Lapangan/models"
+	"Booking-Lapangan/pkg/fieldcache"
 	"Booking-Lapangan/repository"
 )
 
 type mockFieldRepo struct {
-	field *models.Field
+	field           *models.Field
+	updateErr       error
+	deleteErr       error
+	findAllCalls    int
+	findDetailCalls int
 }
 
 func (m *mockFieldRepo) Create(ctx context.Context, field *models.Field) error { return nil }
-func (m *mockFieldRepo) Update(ctx context.Context, field *models.Field) error { return nil }
-func (m *mockFieldRepo) Delete(ctx context.Context, id uint) error             { return nil }
+func (m *mockFieldRepo) Update(ctx context.Context, field *models.Field) error { return m.updateErr }
+func (m *mockFieldRepo) Delete(ctx context.Context, id uint) error             { return m.deleteErr }
 func (m *mockFieldRepo) FindByID(ctx context.Context, id uint) (*models.Field, error) {
 	return m.field, nil
 }
 func (m *mockFieldRepo) FindDetailByID(ctx context.Context, id uint) (*models.Field, error) {
+	m.findDetailCalls++
 	return m.field, nil
 }
 func (m *mockFieldRepo) FindAll(ctx context.Context, filter repository.FieldFilter) ([]models.Field, int64, error) {
+	m.findAllCalls++
 	return nil, 0, nil
 }
 func (m *mockFieldRepo) Count(ctx context.Context) (int64, error) { return 1, nil }
@@ -53,6 +62,165 @@ type fieldTestUOW struct {
 
 func (m *fieldTestUOW) Field() repository.FieldRepository       { return m.fieldRepo }
 func (m *fieldTestUOW) Schedule() repository.ScheduleRepository { return m.scheduleRepo }
+
+type mockFieldCache struct {
+	listData            fieldcache.ListData
+	listKey             string
+	listVersion         string
+	listHit             bool
+	listReadErr         error
+	listInvalidateErr   error
+	listSetCalls        int
+	listInvalidate      int
+	detailData          *dto.FieldResponse
+	detailVersion       string
+	detailHit           bool
+	detailReadErr       error
+	detailInvalidateErr error
+	detailSetCalls      int
+	detailInvalidate    int
+}
+
+func (m *mockFieldCache) GetList(_ context.Context, key string) (fieldcache.ListData, string, bool, error) {
+	m.listKey = key
+	return m.listData, m.listVersion, m.listHit, m.listReadErr
+}
+func (m *mockFieldCache) SetList(context.Context, string, string, fieldcache.ListData) error {
+	m.listSetCalls++
+	return nil
+}
+func (m *mockFieldCache) InvalidateLists(context.Context) error {
+	m.listInvalidate++
+	return m.listInvalidateErr
+}
+func (m *mockFieldCache) GetDetail(context.Context, uint) (*dto.FieldResponse, string, bool, error) {
+	return m.detailData, m.detailVersion, m.detailHit, m.detailReadErr
+}
+func (m *mockFieldCache) SetDetail(context.Context, uint, string, *dto.FieldResponse) error {
+	m.detailSetCalls++
+	return nil
+}
+func (m *mockFieldCache) InvalidateDetail(context.Context, uint) error {
+	m.detailInvalidate++
+	return m.detailInvalidateErr
+}
+
+func TestFieldListUsesCacheHit(t *testing.T) {
+	fieldRepo := &mockFieldRepo{}
+	cache := &mockFieldCache{
+		listData: fieldcache.ListData{
+			Fields: []dto.FieldResponse{{ID: 42, Name: "Cached Field"}},
+			Total:  1,
+		},
+		listVersion: "3",
+		listHit:     true,
+	}
+	uow := &fieldTestUOW{fieldRepo: fieldRepo}
+
+	fields, total, err := controllers.NewFieldController(uow, cache).List(context.Background(), dto.FieldFilterQuery{})
+	if err != nil {
+		t.Fatalf("list fields: %v", err)
+	}
+	if total != 1 || len(fields) != 1 || fields[0].ID != 42 {
+		t.Fatalf("list result = (%+v, total %d), want cached field", fields, total)
+	}
+	if fieldRepo.findAllCalls != 0 {
+		t.Fatalf("database list queried %d times on cache hit, want 0", fieldRepo.findAllCalls)
+	}
+}
+
+func TestFieldListCacheFailureFallsBackToDatabase(t *testing.T) {
+	fieldRepo := &mockFieldRepo{}
+	cache := &mockFieldCache{listReadErr: errors.New("redis unavailable")}
+	uow := &fieldTestUOW{fieldRepo: fieldRepo}
+
+	_, _, err := controllers.NewFieldController(uow, cache).List(context.Background(), dto.FieldFilterQuery{})
+	if err != nil {
+		t.Fatalf("list fields with Redis unavailable: %v", err)
+	}
+	if fieldRepo.findAllCalls != 1 {
+		t.Fatalf("database list queried %d times, want 1", fieldRepo.findAllCalls)
+	}
+	if cache.listSetCalls != 0 {
+		t.Fatalf("cache set called %d times after a failed cache read, want 0", cache.listSetCalls)
+	}
+}
+
+func TestFieldListCacheKeyIncludesFilters(t *testing.T) {
+	fieldRepo := &mockFieldRepo{}
+	cache := &mockFieldCache{}
+	controller := controllers.NewFieldController(&fieldTestUOW{fieldRepo: fieldRepo}, cache)
+
+	if _, _, err := controller.List(context.Background(), dto.FieldFilterQuery{Search: "alpha"}); err != nil {
+		t.Fatalf("list fields with first filter: %v", err)
+	}
+	firstKey := cache.listKey
+	if _, _, err := controller.List(context.Background(), dto.FieldFilterQuery{Search: "beta"}); err != nil {
+		t.Fatalf("list fields with second filter: %v", err)
+	}
+	if firstKey == cache.listKey {
+		t.Fatalf("cache key %q was reused for different filters", firstKey)
+	}
+}
+
+func TestFieldUpdateInvalidatesCachesAfterDatabaseWrite(t *testing.T) {
+	field := &models.Field{ID: 7, Name: "Lapangan Alpha", Type: models.FieldTypePadel}
+	fieldRepo := &mockFieldRepo{field: field}
+	cache := &mockFieldCache{}
+	controller := controllers.NewFieldController(&fieldTestUOW{
+		fieldRepo:    fieldRepo,
+		scheduleRepo: &mockScheduleRepo{},
+	}, cache)
+
+	if _, err := controller.Update(context.Background(), field.ID, dto.UpdateFieldRequest{}); err != nil {
+		t.Fatalf("update field: %v", err)
+	}
+	if cache.listInvalidate != 1 || cache.detailInvalidate != 1 {
+		t.Fatalf("cache invalidations = (list %d, detail %d), want (1, 1)", cache.listInvalidate, cache.detailInvalidate)
+	}
+}
+
+func TestFieldUpdateDoesNotInvalidateCacheWhenDatabaseWriteFails(t *testing.T) {
+	field := &models.Field{ID: 7, Name: "Lapangan Alpha", Type: models.FieldTypePadel}
+	fieldRepo := &mockFieldRepo{field: field, updateErr: errors.New("database unavailable")}
+	cache := &mockFieldCache{}
+	controller := controllers.NewFieldController(&fieldTestUOW{
+		fieldRepo:    fieldRepo,
+		scheduleRepo: &mockScheduleRepo{},
+	}, cache)
+
+	if _, err := controller.Update(context.Background(), field.ID, dto.UpdateFieldRequest{}); err == nil {
+		t.Fatal("update succeeded despite database error")
+	}
+	if cache.listInvalidate != 0 || cache.detailInvalidate != 0 {
+		t.Fatalf("cache invalidated after failed database write: list %d, detail %d", cache.listInvalidate, cache.detailInvalidate)
+	}
+}
+
+func TestFieldUpdateReturnsDatabaseDetailWhenCacheInvalidationFails(t *testing.T) {
+	field := &models.Field{ID: 7, Name: "Old Name", Type: models.FieldTypePadel}
+	fieldRepo := &mockFieldRepo{field: field}
+	staleCacheEntry := &dto.FieldResponse{ID: field.ID, Name: "Old Name", Type: string(models.FieldTypePadel)}
+	cache := &mockFieldCache{
+		listInvalidateErr: errors.New("redis unavailable"),
+		detailData:        staleCacheEntry,
+		detailVersion:     "0",
+		detailHit:         true,
+	}
+	controller := controllers.NewFieldController(&fieldTestUOW{
+		fieldRepo:    fieldRepo,
+		scheduleRepo: &mockScheduleRepo{},
+	}, cache)
+	newName := "New Name"
+
+	response, err := controller.Update(context.Background(), field.ID, dto.UpdateFieldRequest{Name: &newName})
+	if err != nil {
+		t.Fatalf("update field with cache unavailable: %v", err)
+	}
+	if response.Name != newName {
+		t.Fatalf("update response name = %q, want fresh database value %q", response.Name, newName)
+	}
+}
 
 func TestAvailabilityPastDateGraceful(t *testing.T) {
 	mockF := &models.Field{

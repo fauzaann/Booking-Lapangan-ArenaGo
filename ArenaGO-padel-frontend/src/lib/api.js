@@ -14,6 +14,9 @@ async function request(path, options = {}) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body.success === false) {
     const message = typeof body.error === "string" ? body.error : body.message;
+    if (response.status === 401 && token && message === "invalid or expired token") {
+      window.dispatchEvent(new Event("arenago:session-expired"));
+    }
     throw new Error(message || "Permintaan gagal diproses.");
   }
   return body;

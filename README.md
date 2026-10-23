@@ -71,6 +71,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - Register & login (JWT)
 - Melihat daftar lapangan dengan filter (`type`, `status`, `location`, `min_price`, `max_price`, `search`) dan pagination
 - Melihat detail lapangan, jadwal operasional, dan ketersediaan slot per tanggal
+- Cache Redis opsional untuk daftar dan detail lapangan (TTL default 5 menit); PostgreSQL tetap menjadi sumber data utama
 - Membuat booking dengan pengecekan overlap waktu
 - Mendapatkan `payment_url` (invoice Xendit) dan memantau status pembayaran
 - Melihat riwayat & detail booking miliknya sendiri
@@ -121,6 +122,7 @@ UI otomatis memakai gradient fallback.
 | HTTP Framework | Gin |
 | Database Utama | PostgreSQL 16 (GORM) |
 | Database Notifikasi & Antrean | MongoDB (mongo-driver/v2) |
+| Cache Lapangan | Redis (go-redis/v9, opsional) |
 | Auth | JWT (golang-jwt/v5) + bcrypt |
 | Validasi | go-playground/validator/v10 |
 | Config | godotenv (`.env`) |
@@ -139,11 +141,11 @@ Router  ──► Middleware (CORS → Logger → Recovery → JWT → Role)
 Handler        (parsing request, validasi payload, menulis response)
    ↓
 Controller     (business logic; tidak tahu HTTP maupun GORM)
-   ↓
-Repository     (interface + implementasi GORM)
-   ↓
-Database
+   ├──► Redis cache (daftar/detail lapangan; cache-aside)
+   └──► Repository (interface + implementasi GORM) ──► PostgreSQL
 ```
+
+PostgreSQL tetap menjadi sumber kebenaran. Cache hanya mencakup daftar/detail lapangan; availability, booking, dan pembayaran tidak di-cache. Perubahan lapangan atau jadwal menginvalidasi cache. Jika Redis tidak tersedia, API tetap membaca dari PostgreSQL dan mencatat error cache.
 
 Untuk pembayaran:
 
@@ -219,6 +221,8 @@ XENDIT_WEBHOOK_TOKEN=<callback verification token dari dashboard Xendit>
 ```
 
 `.env` sudah masuk `.gitignore` — jangan pernah di-commit. Aplikasi menolak start bila `JWT_SECRET` kurang dari 16 karakter, dan menolak start di `APP_ENV=production` bila kredensial Xendit kosong.
+
+Redis untuk cache lapangan bersifat opsional. Default koneksi adalah `localhost:6379`; jika Redis belum tersedia, backend tetap berjalan dengan fallback PostgreSQL. Atur `REDIS_ADDR`, `REDIS_PASSWORD`, dan `REDIS_DB` untuk koneksi yang berbeda. `FIELD_CACHE_TTL_MINUTES` mengatur TTL (default 5 menit). Untuk mengaktifkan cache lokal, jalankan Redis di alamat tersebut sebelum backend; periksa log `redis: connected` saat startup.
 
 ## Instalasi & Menjalankan
 

@@ -273,6 +273,45 @@ func TestScheduleRemindersForBooking(t *testing.T) {
 	}
 }
 
+func TestScheduleRemindersImmediatelyWhenBookingIsWithinTwoHours(t *testing.T) {
+	now := time.Now()
+	playTime := now.Add(time.Hour).Truncate(time.Minute)
+	bookingDate := time.Date(playTime.Year(), playTime.Month(), playTime.Day(), 0, 0, 0, 0, playTime.Location())
+	mockBooking := &models.Booking{
+		ID:          101,
+		BookingCode: "AG-TEST-002",
+		UserID:      10,
+		FieldID:     1,
+		BookingDate: bookingDate,
+		StartTime:   playTime.Format("15:04"),
+		EndTime:     playTime.Add(time.Hour).Format("15:04"),
+		User:        &models.User{Name: "Andi"},
+		Field:       &models.Field{Name: "Lapangan Padel Alpha"},
+	}
+
+	reminders := newMockReminderRepo()
+	controller := controllers.NewNotificationController(
+		&mockUOW{bookingRepo: &mockBookingRepo{booking: mockBooking}},
+		newMockNotifRepo(),
+		reminders,
+		config.MongoConfig{ReminderH24: true, ReminderH2: true},
+	)
+
+	if err := controller.ScheduleRemindersForBooking(context.Background(), mockBooking.ID); err != nil {
+		t.Fatalf("schedule reminders: %v", err)
+	}
+	if len(reminders.createdJobs) != 1 {
+		t.Fatalf("scheduled %d reminders, want only immediate H-2 reminder", len(reminders.createdJobs))
+	}
+	job := reminders.createdJobs[0]
+	if job.ReminderType != models.ReminderTypeH2 {
+		t.Fatalf("reminder type = %s, want %s", job.ReminderType, models.ReminderTypeH2)
+	}
+	if job.ScheduledFor.Before(now) || job.ScheduledFor.After(time.Now().Add(time.Second)) {
+		t.Fatalf("H-2 reminder scheduled for %v, want immediately around now", job.ScheduledFor)
+	}
+}
+
 func TestCancelRemindersForBooking(t *testing.T) {
 	uow := &mockUOW{bookingRepo: &mockBookingRepo{booking: &models.Booking{ID: 200, BookingCode: "AG-CANCEL-001", UserID: 10}}}
 	mockReminder := newMockReminderRepo()

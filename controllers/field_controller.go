@@ -2,11 +2,16 @@ package controllers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"log"
 	"strings"
 
 	"Booking-Lapangan/dto"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/fieldcache"
 	"Booking-Lapangan/pkg/timeutil"
 	"Booking-Lapangan/repository"
 )
@@ -24,12 +29,17 @@ type FieldController interface {
 }
 
 type fieldController struct {
-	uow repository.UnitOfWork
+	uow   repository.UnitOfWork
+	cache fieldcache.Store
 }
 
 // NewFieldController membuat FieldController.
-func NewFieldController(uow repository.UnitOfWork) FieldController {
-	return &fieldController{uow: uow}
+func NewFieldController(uow repository.UnitOfWork, caches ...fieldcache.Store) FieldController {
+	controller := &fieldController{uow: uow}
+	if len(caches) > 0 {
+		controller.cache = caches[0]
+	}
+	return controller
 }
 
 // List mengambil daftar lapangan padel sesuai filter dan pagination.
@@ -50,15 +60,73 @@ func (c *fieldController) List(ctx context.Context, query dto.FieldFilterQuery) 
 		MaxPrice:   query.MaxPrice,
 	}
 
+	var cacheKey string
+	var cacheVersion string
+	cacheReadSucceeded := false
+	var err error
+	if c.cache != nil {
+		cacheKey, err = fieldListCacheKey(filter)
+		if err != nil {
+			return nil, 0, err
+		}
+		cached, version, hit, cacheErr := c.cache.GetList(ctx, cacheKey)
+		if cacheErr != nil {
+			log.Printf("field cache: list read failed: %v", cacheErr)
+		} else {
+			cacheVersion = version
+			cacheReadSucceeded = true
+			if hit {
+				return cached.Fields, cached.Total, nil
+			}
+		}
+	}
+
 	fields, total, err := c.uow.Field().FindAll(ctx, filter)
 	if err != nil {
 		return nil, 0, err
 	}
-	return dto.NewFieldResponses(fields), total, nil
+	responses := dto.NewFieldResponses(fields)
+	if c.cache != nil && cacheReadSucceeded {
+		if err := c.cache.SetList(ctx, cacheKey, cacheVersion, fieldcache.ListData{
+			Fields: responses,
+			Total:  total,
+		}); err != nil {
+			log.Printf("field cache: list write failed: %v", err)
+		}
+	}
+	return responses, total, nil
 }
 
 // Detail mengambil detail lapangan beserta jadwal operasional.
 func (c *fieldController) Detail(ctx context.Context, id uint) (*dto.FieldResponse, error) {
+	var cacheVersion string
+	cacheReadSucceeded := false
+	if c.cache != nil {
+		cached, version, hit, cacheErr := c.cache.GetDetail(ctx, id)
+		if cacheErr != nil {
+			log.Printf("field cache: detail read failed for field %d: %v", id, cacheErr)
+		} else {
+			cacheVersion = version
+			cacheReadSucceeded = true
+			if hit {
+				return cached, nil
+			}
+		}
+	}
+
+	response, err := c.loadFieldDetail(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if c.cache != nil && cacheReadSucceeded {
+		if err := c.cache.SetDetail(ctx, id, cacheVersion, response); err != nil {
+			log.Printf("field cache: detail write failed for field %d: %v", id, err)
+		}
+	}
+	return response, nil
+}
+
+func (c *fieldController) loadFieldDetail(ctx context.Context, id uint) (*dto.FieldResponse, error) {
 	field, err := c.uow.Field().FindDetailByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -109,6 +177,9 @@ func (c *fieldController) Create(ctx context.Context, req dto.CreateFieldRequest
 		return nil, err
 	}
 
+	if !c.invalidateFieldCache(ctx, field.ID) {
+		return c.loadFieldDetail(ctx, field.ID)
+	}
 	return c.Detail(ctx, field.ID)
 }
 
@@ -150,12 +221,19 @@ func (c *fieldController) Update(ctx context.Context, id uint, req dto.UpdateFie
 	if err := c.uow.Field().Update(ctx, field); err != nil {
 		return nil, err
 	}
+	if !c.invalidateFieldCache(ctx, field.ID) {
+		return c.loadFieldDetail(ctx, field.ID)
+	}
 	return c.Detail(ctx, field.ID)
 }
 
 // Delete menghapus lapangan berdasarkan ID.
 func (c *fieldController) Delete(ctx context.Context, id uint) error {
-	return c.uow.Field().Delete(ctx, id)
+	if err := c.uow.Field().Delete(ctx, id); err != nil {
+		return err
+	}
+	c.invalidateFieldCache(ctx, id)
+	return nil
 }
 
 // Availability menyusun slot per jam beserta status ketersediaannya
@@ -273,7 +351,33 @@ func (c *fieldController) UpsertSchedules(ctx context.Context, fieldID uint, req
 	if err := c.uow.Schedule().Upsert(ctx, schedules); err != nil {
 		return nil, err
 	}
+	c.invalidateFieldCache(ctx, fieldID)
 	return c.ListSchedules(ctx, fieldID)
+}
+
+func (c *fieldController) invalidateFieldCache(ctx context.Context, fieldID uint) bool {
+	if c.cache == nil {
+		return true
+	}
+	succeeded := true
+	if err := c.cache.InvalidateLists(ctx); err != nil {
+		log.Printf("field cache: list invalidation failed after field %d mutation: %v", fieldID, err)
+		succeeded = false
+	}
+	if err := c.cache.InvalidateDetail(ctx, fieldID); err != nil {
+		log.Printf("field cache: detail invalidation failed for field %d: %v", fieldID, err)
+		succeeded = false
+	}
+	return succeeded
+}
+
+func fieldListCacheKey(filter repository.FieldFilter) (string, error) {
+	encoded, err := json.Marshal(filter)
+	if err != nil {
+		return "", apperror.Internal("failed to create field cache key", err)
+	}
+	hash := sha256.Sum256(encoded)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 // buildSchedules memvalidasi request jadwal dan mengubahnya menjadi model.

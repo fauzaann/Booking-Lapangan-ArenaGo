@@ -222,7 +222,13 @@ func (c *notificationController) buildReminderJobs(booking *models.Booking, now 
 		{c.mongoCfg.ReminderH2, models.ReminderTypeH2, 2 * time.Hour},
 	} {
 		scheduledFor := playTime.Add(-reminder.lead)
-		if reminder.enabled && scheduledFor.After(now) {
+		if !reminder.enabled || !playTime.After(now) {
+			continue
+		}
+		if reminder.kind == models.ReminderTypeH2 && !scheduledFor.After(now) {
+			scheduledFor = now
+		}
+		if scheduledFor.After(now) || reminder.kind == models.ReminderTypeH2 && scheduledFor.Equal(now) {
 			jobs = append(jobs, models.ReminderJob{
 				BookingID: booking.ID, BookingCode: booking.BookingCode,
 				UserID: booking.UserID, UserName: userName, UserEmail: userEmail, UserPhone: userPhone,

@@ -21,6 +21,7 @@ type Config struct {
 	OpenRouter OpenRouterConfig
 	Booking    BookingConfig
 	Mongo      MongoConfig
+	Redis      RedisConfig
 }
 
 // AppConfig berisi konfigurasi umum aplikasi.
@@ -97,6 +98,14 @@ type MongoConfig struct {
 	ReminderH2     bool
 }
 
+// RedisConfig berisi koneksi Redis dan durasi cache lapangan.
+type RedisConfig struct {
+	Address  string
+	Password string
+	DB       int
+	CacheTTL time.Duration
+}
+
 // Load membaca file .env (jika ada) lalu environment variable.
 func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
@@ -153,6 +162,12 @@ func Load() (*Config, error) {
 			ReminderH24:    getEnvBool("REMINDER_H24_ENABLED", true),
 			ReminderH2:     getEnvBool("REMINDER_H2_ENABLED", true),
 		},
+		Redis: RedisConfig{
+			Address:  getEnv("REDIS_ADDR", "localhost:6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvInt("REDIS_DB", 0),
+			CacheTTL: time.Duration(getEnvInt("FIELD_CACHE_TTL_MINUTES", 5)) * time.Minute,
+		},
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -181,6 +196,12 @@ func (c *Config) validate() error {
 	}
 	if c.Booking.MaxHours < c.Booking.MinHours {
 		return fmt.Errorf("BOOKING_MAX_HOUR must be greater than or equal to BOOKING_MIN_HOUR")
+	}
+	if c.Redis.DB < 0 {
+		return fmt.Errorf("REDIS_DB must be 0 or greater")
+	}
+	if c.Redis.CacheTTL <= 0 {
+		return fmt.Errorf("FIELD_CACHE_TTL_MINUTES must be greater than 0")
 	}
 
 	if c.Xendit.WebhookToken == "" {

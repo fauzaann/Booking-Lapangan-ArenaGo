@@ -87,11 +87,19 @@ func (w *ReminderWorker) runOnce(ctx context.Context) {
 				job.UserName, job.FieldName, dateStr, job.StartTime, job.EndTime,
 			)
 		} else {
-			title = "Pengingat: Jadwal Bermain 2 Jam Lagi ⏳"
-			message = fmt.Sprintf(
-				"Halo %s, jadwal bermain Anda di %s dimulai 2 jam lagi pukul %s WIB. Siapkan raket dan segera meluncur ke lapangan!",
-				job.UserName, job.FieldName, job.StartTime,
-			)
+			if remaining := job.PlayTime.Sub(now); remaining < 2*time.Hour {
+				title = "Pengingat: Jadwal Bermain Segera ⏳"
+				message = fmt.Sprintf(
+					"Halo %s, jadwal bermain Anda di %s dimulai pukul %s WIB. Waktu bermain sudah dekat, segera bersiap!",
+					job.UserName, job.FieldName, job.StartTime,
+				)
+			} else {
+				title = "Pengingat: Jadwal Bermain 2 Jam Lagi ⏳"
+				message = fmt.Sprintf(
+					"Halo %s, jadwal bermain Anda di %s dimulai 2 jam lagi pukul %s WIB. Siapkan raket dan segera meluncur ke lapangan!",
+					job.UserName, job.FieldName, job.StartTime,
+				)
+			}
 		}
 
 		// Simpan notifikasi ke kotak masuk in-app

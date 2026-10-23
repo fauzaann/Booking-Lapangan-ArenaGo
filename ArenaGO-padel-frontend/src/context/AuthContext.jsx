@@ -21,6 +21,16 @@ export function AuthProvider({ children }) {
     else localStorage.removeItem(STORAGE_KEY);
   }, [user]);
 
+  useEffect(() => {
+    function handleSessionExpired() {
+      clearSession();
+      setUser(null);
+    }
+
+    window.addEventListener("arenago:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("arenago:session-expired", handleSessionExpired);
+  }, []);
+
   async function login(credentials) {
     setStatus("loading");
     try {

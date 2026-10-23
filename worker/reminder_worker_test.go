@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,6 +94,7 @@ func TestReminderWorkerRunOnce(t *testing.T) {
 				BookingDate:  time.Now().Add(2 * time.Hour),
 				StartTime:    "20:00",
 				EndTime:      "22:00",
+				PlayTime:     time.Now().Add(time.Hour),
 				ReminderType: models.ReminderTypeH2,
 				ScheduledFor: time.Now().Add(-1 * time.Minute),
 				Status:       models.ReminderStatusScheduled,
@@ -116,6 +118,12 @@ func TestReminderWorkerRunOnce(t *testing.T) {
 	}
 	if notif.Type != models.NotificationTypeReminderMatch {
 		t.Errorf("expected type %s, got %s", models.NotificationTypeReminderMatch, notif.Type)
+	}
+	if notif.Title != "Pengingat: Jadwal Bermain Segera ⏳" {
+		t.Errorf("expected immediate reminder title, got %q", notif.Title)
+	}
+	if !strings.Contains(notif.Message, "Waktu bermain sudah dekat") {
+		t.Errorf("expected immediate reminder message, got %q", notif.Message)
 	}
 
 	// Pastikan status job diupdate menjadi SENT

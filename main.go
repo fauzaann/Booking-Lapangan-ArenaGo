@@ -19,6 +19,7 @@ import (
 	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/database"
 	"Booking-Lapangan/handler"
+	"Booking-Lapangan/pkg/fieldcache"
 	"Booking-Lapangan/pkg/jwt"
 	"Booking-Lapangan/pkg/validator"
 	"Booking-Lapangan/repository"
@@ -83,6 +84,19 @@ func main() {
 	tokens := jwt.NewManager(cfg.JWT.Secret, cfg.JWT.Duration)
 	invoices := config.NewXenditClient(cfg)
 	assistant := config.NewOpenRouterClient(cfg)
+	redisClient := config.NewRedisClient(cfg.Redis)
+	defer func() {
+		if closeErr := config.CloseRedis(redisClient); closeErr != nil {
+			log.Printf("redis: failed to close connection: %v", closeErr)
+		}
+	}()
+	redisCtx, redisCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if err := config.PingRedis(redisCtx, redisClient); err != nil {
+		log.Printf("redis: not connected (%v) - field cache will fall back to PostgreSQL", err)
+	} else {
+		log.Println("redis: connected")
+	}
+	redisCancel()
 
 	// Inisialisasi MongoDB (Notifikasi & Pengingat Jadwal Bermain)
 	mongoClient, mongoDB, mongoErr := config.NewMongoDB(cfg)
@@ -121,7 +135,7 @@ func main() {
 	notifHandler = handler.NewNotificationHandler(notifController, validate)
 
 	authController := controllers.NewAuthController(uow.User(), tokens)
-	fieldController := controllers.NewFieldController(uow)
+	fieldController := controllers.NewFieldController(uow, fieldcache.New(redisClient, cfg.Redis.CacheTTL))
 	bookingController := controllers.NewBookingController(uow, invoices, controllers.BookingPolicy{
 		MinHours:           cfg.Booking.MinHours,
 		MaxHours:           cfg.Booking.MaxHours,
