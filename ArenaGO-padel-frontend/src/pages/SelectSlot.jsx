@@ -7,6 +7,7 @@ import TimeSlotGrid from "../components/booking/TimeSlotGrid";
 import { getUpcomingDays } from "../lib/mockData";
 import { api } from "../lib/api";
 import { formatDateInput, formatDateShort, formatIDR } from "../lib/format";
+import { toggleContiguousSlot } from "../lib/bookingSlots";
 
 export default function SelectSlot() {
   const { courtId } = useParams();
@@ -57,9 +58,7 @@ export default function SelectSlot() {
   );
 
   function toggleSlot(time) {
-    setSelected((prev) =>
-      prev.includes(time) ? prev.filter((t) => t !== time) : [...prev, time].sort()
-    );
+    setSelected((prev) => toggleContiguousSlot(slots, prev, time));
   }
 
   const total = selected.length * (court?.pricePerHour || 0);
@@ -125,6 +124,9 @@ export default function SelectSlot() {
               </span>
             </div>
           </div>
+          <p className="mb-3 text-xs text-ink-muted">
+            Pilih beberapa jam berurutan untuk booking lebih dari 1 jam.
+          </p>
           {loadingAvailability ? (
             <div className="rounded-lg border border-dashed border-border bg-surface-raised px-5 py-10 text-center text-sm text-ink-muted">
               Memuat ketersediaan slot...
