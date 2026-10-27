@@ -145,6 +145,11 @@ func main() {
 		FailureRedirectURL: cfg.Xendit.FailureRedirectURL,
 	})
 	paymentController := controllers.NewPaymentController(uow, invoices, cfg.Xendit.WebhookToken)
+	checkoutController := controllers.NewCheckoutController(uow, invoices, controllers.BookingPolicy{
+		MinHours: cfg.Booking.MinHours, MaxHours: cfg.Booking.MaxHours,
+		CancelMinHours: cfg.Booking.CancelMinHours, InvoiceDuration: cfg.Xendit.InvoiceDuration,
+		SuccessRedirectURL: cfg.Xendit.SuccessRedirectURL, FailureRedirectURL: cfg.Xendit.FailureRedirectURL,
+	})
 	adminController := controllers.NewAdminController(uow)
 
 	// Hubungkan notifikasi ke lifecycle pembayaran dan pembatalan booking
@@ -159,6 +164,7 @@ func main() {
 		Field:        handler.NewFieldHandler(fieldController, validate),
 		Schedule:     handler.NewScheduleHandler(fieldController, validate),
 		Booking:      handler.NewBookingHandler(bookingController, validate),
+		Checkout:     handler.NewCheckoutHandler(checkoutController, validate),
 		Payment:      handler.NewPaymentHandler(paymentController, validate),
 		Assistant:    handler.NewAssistantHandler(controllers.NewAssistantController(assistant), validate),
 		Admin:        handler.NewAdminHandler(adminController, validate),

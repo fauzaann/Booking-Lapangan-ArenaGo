@@ -22,6 +22,7 @@ type PaymentRepository interface {
 	FindByID(ctx context.Context, id uint) (*models.Payment, error)
 	FindByExternalID(ctx context.Context, externalID string) (*models.Payment, error)
 	FindByBookingID(ctx context.Context, bookingID uint) (*models.Payment, error)
+	FindByCheckoutID(ctx context.Context, checkoutID uint) ([]models.Payment, error)
 	FindAll(ctx context.Context, filter PaymentFilter) ([]models.Payment, int64, error)
 	SumPaidAmount(ctx context.Context) (float64, error)
 	ExpireOverdue(ctx context.Context, now time.Time) ([]uint, error)
@@ -74,6 +75,15 @@ func (r *paymentRepository) FindByBookingID(ctx context.Context, bookingID uint)
 		return nil, translate(err, "payment not found")
 	}
 	return &payment, nil
+}
+
+func (r *paymentRepository) FindByCheckoutID(ctx context.Context, checkoutID uint) ([]models.Payment, error) {
+	var payments []models.Payment
+	err := r.db.WithContext(ctx).Where("checkout_id = ?", checkoutID).Find(&payments).Error
+	if err != nil {
+		return nil, translate(err, "payment not found")
+	}
+	return payments, nil
 }
 
 // FindAll mengambil pembayaran dengan filter status dan pagination.

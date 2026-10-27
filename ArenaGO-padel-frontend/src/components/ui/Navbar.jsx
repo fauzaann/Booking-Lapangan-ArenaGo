@@ -4,6 +4,7 @@ import Icon from "./Icon";
 import { useAuth } from "../../context/AuthContext";
 import BrandLogo from "./BrandLogo";
 import NotificationDropdown from "./NotificationDropdown";
+import { useCart } from "../../context/CartContext";
 
 function getNavItems({ isAuthenticated, isAdmin }) {
   const items = [{ to: "/", label: "Eksplor", icon: "sports_tennis" }];
@@ -20,6 +21,7 @@ function getNavItems({ isAuthenticated, isAdmin }) {
 
 export default function Navbar() {
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
+  const { items } = useCart();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const navItems = getNavItems({ isAuthenticated, isAdmin });
@@ -72,6 +74,18 @@ export default function Navbar() {
             </div>
           ) : (
             <div className="flex items-center gap-2.5">
+              <Link
+                to="/keranjang"
+                aria-label={`Keranjang, ${items.length} item`}
+                className="relative flex h-10 w-10 items-center justify-center rounded-full text-ink-muted hover:bg-surface hover:text-ink"
+              >
+                <Icon name="shopping_basket" size={21} />
+                {items.length > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-terracotta px-1 text-[10px] font-bold text-white">
+                    {items.length}
+                  </span>
+                )}
+              </Link>
               <NotificationDropdown />
               <div className="relative">
                 <button

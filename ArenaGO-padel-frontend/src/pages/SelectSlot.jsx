@@ -8,15 +8,18 @@ import { getUpcomingDays } from "../lib/mockData";
 import { api } from "../lib/api";
 import { formatDateInput, formatDateShort, formatIDR } from "../lib/format";
 import { toggleContiguousSlot } from "../lib/bookingSlots";
+import { useCart } from "../context/CartContext";
 
 export default function SelectSlot() {
   const { courtId } = useParams();
   const navigate = useNavigate();
+  const { addItem } = useCart();
   const [court, setCourt] = useState(null);
   const [availability, setAvailability] = useState(null);
   const [courtError, setCourtError] = useState("");
   const [availabilityError, setAvailabilityError] = useState("");
   const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [cartMessage, setCartMessage] = useState("");
 
   const days = useMemo(() => getUpcomingDays(7), []);
   const [dayIndex, setDayIndex] = useState(0);
@@ -67,6 +70,23 @@ export default function SelectSlot() {
     navigate("/konfirmasi", {
       state: { court, date: selectedDate, slots: selected },
     });
+  }
+
+  function addSelectionToCart() {
+    if (!selected.length) return;
+    const lastSlot = slots.find((slot) => slot.time === selected[selected.length - 1]);
+    if (!lastSlot) return;
+    addItem({
+      fieldId: court.id,
+      fieldName: court.name,
+      date: dateValue,
+      startTime: selected[0],
+      endTime: lastSlot.end,
+      duration: selected.length,
+      pricePerHour: court.pricePerHour,
+      totalPrice: total,
+    });
+    setCartMessage("Jadwal ditambahkan ke keranjang. Slot belum dikunci sampai checkout.");
   }
 
   if (courtError) return <div className="px-5 py-20 text-center text-sm text-red-600">{courtError}</div>;
@@ -186,6 +206,15 @@ export default function SelectSlot() {
               <span className="font-display text-2xl">{formatIDR(total)}</span>
             </div>
 
+            {cartMessage && <p role="status" className="mb-3 text-xs text-sage">{cartMessage}</p>}
+            <Button
+              variant="secondary"
+              className="mb-2 w-full"
+              disabled={selected.length === 0}
+              onClick={addSelectionToCart}
+            >
+              Tambah ke Keranjang
+            </Button>
             <Button
               className="w-full"
               disabled={selected.length === 0}

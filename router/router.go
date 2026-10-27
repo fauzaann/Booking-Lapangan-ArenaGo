@@ -26,6 +26,7 @@ type Dependencies struct {
 	Field        *handler.FieldHandler
 	Schedule     *handler.ScheduleHandler
 	Booking      *handler.BookingHandler
+	Checkout     *handler.CheckoutHandler
 	Payment      *handler.PaymentHandler
 	Assistant    *handler.AssistantHandler
 	Admin        *handler.AdminHandler
@@ -90,6 +91,13 @@ func New(deps Dependencies) *gin.Engine {
 		bookings.POST("/:id/cancel", deps.Booking.CancelPost)
 		bookings.PATCH("/:id/reschedule", deps.Booking.Reschedule)
 		bookings.DELETE("/:id", deps.Booking.Cancel)
+	}
+
+	checkouts := v1.Group("/checkouts", authenticated)
+	{
+		checkouts.POST("", deps.Checkout.Create)
+		checkouts.GET("/:id", deps.Checkout.Detail)
+		checkouts.POST("/:id/sync-payment", deps.Payment.SyncCheckout)
 	}
 
 	// ---------- Payments ----------

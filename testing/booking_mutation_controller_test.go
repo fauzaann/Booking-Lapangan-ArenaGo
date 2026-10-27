@@ -55,6 +55,9 @@ func (r *mutationBookingRepo) find(id uint) (*models.Booking, error) {
 func (r *mutationBookingRepo) FindByCode(context.Context, string) (*models.Booking, error) {
 	return nil, apperror.NotFound("booking not found")
 }
+func (r *mutationBookingRepo) FindByCheckoutID(context.Context, uint) ([]models.Booking, error) {
+	return nil, nil
+}
 func (r *mutationBookingRepo) FindAll(context.Context, repository.BookingFilter) ([]models.Booking, int64, error) {
 	return nil, 0, nil
 }
@@ -142,6 +145,7 @@ func (u *mutationUnitOfWork) Booking() repository.BookingRepository {
 func (u *mutationUnitOfWork) Payment() repository.PaymentRepository {
 	return u.payment
 }
+func (u *mutationUnitOfWork) Checkout() repository.CheckoutRepository { return nil }
 func (u *mutationUnitOfWork) AuditLog() repository.AuditLogRepository { return nil }
 func (u *mutationUnitOfWork) Atomic(ctx context.Context, fn func(repository.Registry) error) error {
 	u.tx.Lock()

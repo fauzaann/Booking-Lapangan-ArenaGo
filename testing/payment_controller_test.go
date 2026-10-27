@@ -15,6 +15,7 @@ import (
 type paymentMockUOW struct {
 	paymentRepo  repository.PaymentRepository
 	bookingRepo  repository.BookingRepository
+	checkoutRepo repository.CheckoutRepository
 	auditLogRepo repository.AuditLogRepository
 }
 
@@ -23,6 +24,12 @@ func (m *paymentMockUOW) Field() repository.FieldRepository       { return nil }
 func (m *paymentMockUOW) Schedule() repository.ScheduleRepository { return nil }
 func (m *paymentMockUOW) Booking() repository.BookingRepository   { return m.bookingRepo }
 func (m *paymentMockUOW) Payment() repository.PaymentRepository   { return m.paymentRepo }
+func (m *paymentMockUOW) Checkout() repository.CheckoutRepository {
+	if m.checkoutRepo != nil {
+		return m.checkoutRepo
+	}
+	return &testCheckoutRepo{}
+}
 func (m *paymentMockUOW) AuditLog() repository.AuditLogRepository { return m.auditLogRepo }
 func (m *paymentMockUOW) Atomic(ctx context.Context, fn func(r repository.Registry) error) error {
 	return fn(m)
@@ -30,12 +37,20 @@ func (m *paymentMockUOW) Atomic(ctx context.Context, fn func(r repository.Regist
 
 type testPaymentRepo struct {
 	payment     *models.Payment
+	payments    []models.Payment
 	updatedWith *models.Payment
 }
 
 func (r *testPaymentRepo) Create(ctx context.Context, payment *models.Payment) error { return nil }
 func (r *testPaymentRepo) Update(ctx context.Context, payment *models.Payment) error {
 	r.updatedWith = payment
+	for i := range r.payments {
+		if r.payments[i].ID == payment.ID {
+			r.payments[i] = *payment
+			return nil
+		}
+	}
+	r.payments = append(r.payments, *payment)
 	return nil
 }
 func (r *testPaymentRepo) FindByID(ctx context.Context, id uint) (*models.Payment, error) {
@@ -53,6 +68,15 @@ func (r *testPaymentRepo) FindByBookingID(ctx context.Context, bookingID uint) (
 	}
 	return nil, apperror.NotFound("payment not found")
 }
+func (r *testPaymentRepo) FindByCheckoutID(_ context.Context, checkoutID uint) ([]models.Payment, error) {
+	var result []models.Payment
+	for _, payment := range r.payments {
+		if payment.CheckoutID != nil && *payment.CheckoutID == checkoutID {
+			result = append(result, payment)
+		}
+	}
+	return result, nil
+}
 func (r *testPaymentRepo) FindAll(ctx context.Context, filter repository.PaymentFilter) ([]models.Payment, int64, error) {
 	return nil, 0, nil
 }
@@ -61,14 +85,48 @@ func (r *testPaymentRepo) ExpireOverdue(ctx context.Context, now time.Time) ([]u
 	return nil, nil
 }
 
+type testCheckoutRepo struct {
+	checkout *models.Checkout
+}
+
+func (r *testCheckoutRepo) Create(_ context.Context, checkout *models.Checkout) error {
+	r.checkout = checkout
+	return nil
+}
+func (r *testCheckoutRepo) Update(_ context.Context, checkout *models.Checkout) error {
+	r.checkout = checkout
+	return nil
+}
+func (r *testCheckoutRepo) FindByID(_ context.Context, id uint) (*models.Checkout, error) {
+	if r.checkout != nil && r.checkout.ID == id {
+		return r.checkout, nil
+	}
+	return nil, apperror.NotFound("checkout not found")
+}
+func (r *testCheckoutRepo) FindByExternalID(_ context.Context, externalID string) (*models.Checkout, error) {
+	if r.checkout != nil && r.checkout.ExternalID == externalID {
+		return r.checkout, nil
+	}
+	return nil, apperror.NotFound("checkout not found")
+}
+
 type testBookingRepo struct {
 	booking     *models.Booking
+	bookings    []models.Booking
+	checkoutIDs map[uint]uint
 	updatedWith *models.Booking
 }
 
 func (r *testBookingRepo) Create(ctx context.Context, booking *models.Booking) error { return nil }
 func (r *testBookingRepo) Update(ctx context.Context, booking *models.Booking) error {
 	r.updatedWith = booking
+	for i := range r.bookings {
+		if r.bookings[i].ID == booking.ID {
+			r.bookings[i] = *booking
+			return nil
+		}
+	}
+	r.bookings = append(r.bookings, *booking)
 	return nil
 }
 func (r *testBookingRepo) UpdateSchedule(ctx context.Context, booking *models.Booking) error {
@@ -89,6 +147,15 @@ func (r *testBookingRepo) FindDetailByIDForUpdate(ctx context.Context, id uint) 
 }
 func (r *testBookingRepo) FindByCode(ctx context.Context, code string) (*models.Booking, error) {
 	return r.booking, nil
+}
+func (r *testBookingRepo) FindByCheckoutID(_ context.Context, checkoutID uint) ([]models.Booking, error) {
+	var result []models.Booking
+	for _, booking := range r.bookings {
+		if r.checkoutIDs[booking.ID] == checkoutID {
+			result = append(result, booking)
+		}
+	}
+	return result, nil
 }
 func (r *testBookingRepo) FindAll(ctx context.Context, filter repository.BookingFilter) ([]models.Booking, int64, error) {
 	return nil, 0, nil
@@ -256,5 +323,80 @@ func TestPaymentController_SyncPaymentStatus_StillPending(t *testing.T) {
 
 	if bookingRepo.updatedWith != nil {
 		t.Errorf("expected booking to NOT be updated when invoice is still pending")
+	}
+}
+
+func TestPaymentController_HandleWebhook_ConfirmsWholeCheckout(t *testing.T) {
+	checkoutID := uint(7)
+	checkoutRepo := &testCheckoutRepo{checkout: &models.Checkout{
+		ID: 7, UserID: 1, ExternalID: "checkout-7", Amount: 200000,
+		Status: models.PaymentStatusPending,
+	}}
+	paymentRepo := &testPaymentRepo{payments: []models.Payment{
+		{ID: 11, BookingID: 21, CheckoutID: &checkoutID, Amount: 100000, Status: models.PaymentStatusPending},
+		{ID: 12, BookingID: 22, CheckoutID: &checkoutID, Amount: 100000, Status: models.PaymentStatusPending},
+	}}
+	bookingRepo := &testBookingRepo{
+		bookings: []models.Booking{
+			{ID: 21, Status: models.BookingStatusWaitingPayment},
+			{ID: 22, Status: models.BookingStatusWaitingPayment},
+		},
+		checkoutIDs: map[uint]uint{21: checkoutID, 22: checkoutID},
+	}
+	uow := &paymentMockUOW{
+		paymentRepo: paymentRepo, bookingRepo: bookingRepo, checkoutRepo: checkoutRepo,
+	}
+	controller := controllers.NewPaymentController(uow, nil, "valid-token")
+	payload := xendit.WebhookPayload{
+		ExternalID: "checkout-7", Status: xendit.StatusPaid, Amount: 200000, PaidAmount: 200000,
+	}
+
+	if err := controller.HandleWebhook(context.Background(), "valid-token", payload); err != nil {
+		t.Fatalf("HandleWebhook() error = %v", err)
+	}
+	if checkoutRepo.checkout.Status != models.PaymentStatusPaid {
+		t.Fatalf("checkout status = %s, want PAID", checkoutRepo.checkout.Status)
+	}
+	for _, payment := range paymentRepo.payments {
+		if payment.Status != models.PaymentStatusPaid {
+			t.Errorf("payment %d status = %s, want PAID", payment.ID, payment.Status)
+		}
+	}
+	for _, booking := range bookingRepo.bookings {
+		if booking.Status != models.BookingStatusConfirmed {
+			t.Errorf("booking %d status = %s, want CONFIRMED", booking.ID, booking.Status)
+		}
+	}
+
+	if err := controller.HandleWebhook(context.Background(), "valid-token", payload); err != nil {
+		t.Fatalf("duplicate HandleWebhook() error = %v", err)
+	}
+}
+
+func TestPaymentController_HandleWebhook_RejectsCheckoutAmountMismatch(t *testing.T) {
+	checkoutID := uint(7)
+	checkoutRepo := &testCheckoutRepo{checkout: &models.Checkout{
+		ID: 7, UserID: 1, ExternalID: "checkout-7", Amount: 200000,
+		Status: models.PaymentStatusPending,
+	}}
+	paymentRepo := &testPaymentRepo{payments: []models.Payment{
+		{ID: 11, BookingID: 21, CheckoutID: &checkoutID, Amount: 100000, Status: models.PaymentStatusPending},
+	}}
+	bookingRepo := &testBookingRepo{
+		bookings:    []models.Booking{{ID: 21, Status: models.BookingStatusWaitingPayment}},
+		checkoutIDs: map[uint]uint{21: checkoutID},
+	}
+	uow := &paymentMockUOW{
+		paymentRepo: paymentRepo, bookingRepo: bookingRepo, checkoutRepo: checkoutRepo,
+	}
+	controller := controllers.NewPaymentController(uow, nil, "valid-token")
+	err := controller.HandleWebhook(context.Background(), "valid-token", xendit.WebhookPayload{
+		ExternalID: "checkout-7", Status: xendit.StatusPaid, Amount: 150000, PaidAmount: 150000,
+	})
+	if err == nil {
+		t.Fatal("expected amount mismatch to be rejected")
+	}
+	if checkoutRepo.checkout.Status != models.PaymentStatusPending {
+		t.Fatalf("checkout changed despite amount mismatch: %s", checkoutRepo.checkout.Status)
 	}
 }

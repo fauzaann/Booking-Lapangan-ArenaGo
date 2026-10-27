@@ -20,6 +20,7 @@ type PaymentController interface {
 	DetailByBooking(ctx context.Context, actor Actor, bookingID uint) (*dto.PaymentResponse, error)
 	List(ctx context.Context, query dto.PaymentFilterQuery) ([]dto.PaymentResponse, int64, error)
 	SyncPaymentStatus(ctx context.Context, actor Actor, bookingID uint) (*dto.PaymentResponse, error)
+	SyncCheckoutStatus(ctx context.Context, actor Actor, checkoutID uint) (*dto.CheckoutResponse, error)
 	SetNotificationController(nc NotificationController)
 }
 
@@ -61,9 +62,21 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 
 	verified := c.verify(ctx, payload)
 
-	var confirmedBookingID uint
+	var confirmedBookingIDs []uint
 
 	err := c.uow.Atomic(ctx, func(r repository.Registry) error {
+		checkout, checkoutErr := r.Checkout().FindByExternalID(ctx, verified.ExternalID)
+		if checkoutErr == nil {
+			if checkout.Status != models.PaymentStatusPending {
+				log.Printf("payment: checkout webhook for %s ignored, status already %s", checkout.ExternalID, checkout.Status)
+				return nil
+			}
+			return applyCheckoutWebhook(ctx, r, checkout, verified, &confirmedBookingIDs)
+		}
+		if !apperror.IsNotFound(checkoutErr) {
+			return checkoutErr
+		}
+
 		payment, err := r.Payment().FindByExternalID(ctx, verified.ExternalID)
 		if err != nil {
 			if apperror.IsNotFound(err) {
@@ -105,7 +118,7 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 			payment.PaymentMethod = verified.PaymentMethod
 			payment.PaymentChannel = verified.PaymentChannel
 			booking.Status = models.BookingStatusConfirmed
-			confirmedBookingID = booking.ID
+			confirmedBookingIDs = append(confirmedBookingIDs, booking.ID)
 
 		case xendit.StatusExpired:
 			payment.Status = models.PaymentStatusExpired
@@ -127,15 +140,99 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 		return err
 	}
 
-	if confirmedBookingID > 0 && c.notif != nil {
+	c.scheduleConfirmedBookings(confirmedBookingIDs)
+	return nil
+}
+
+func applyCheckoutWebhook(
+	ctx context.Context,
+	r repository.Registry,
+	checkout *models.Checkout,
+	verified xendit.WebhookPayload,
+	confirmedBookingIDs *[]uint,
+) error {
+	status := strings.ToUpper(strings.TrimSpace(verified.Status))
+	switch status {
+	case xendit.StatusPaid, xendit.StatusSettled:
+		paid := verified.PaidAmount
+		if paid == 0 {
+			paid = verified.Amount
+		}
+		if paid+1 < checkout.Amount || math.IsNaN(paid) {
+			return apperror.BadRequest("paid amount does not match invoice amount")
+		}
+	case xendit.StatusExpired:
+	default:
+		return nil
+	}
+
+	payments, err := r.Payment().FindByCheckoutID(ctx, checkout.ID)
+	if err != nil {
+		return err
+	}
+	bookings, err := r.Booking().FindByCheckoutID(ctx, checkout.ID)
+	if err != nil {
+		return err
+	}
+	now := timeNow()
+	switch status {
+	case xendit.StatusPaid, xendit.StatusSettled:
+		paidAt := verified.PaidAt
+		if paidAt == nil {
+			paidAt = &now
+		}
+		checkout.Status = models.PaymentStatusPaid
+		checkout.PaidAt = paidAt
+		checkout.PaymentMethod = verified.PaymentMethod
+		checkout.PaymentChannel = verified.PaymentChannel
+		for i := range payments {
+			payments[i].Status = models.PaymentStatusPaid
+			payments[i].PaidAt = paidAt
+			payments[i].PaymentMethod = verified.PaymentMethod
+			payments[i].PaymentChannel = verified.PaymentChannel
+			if err := r.Payment().Update(ctx, &payments[i]); err != nil {
+				return err
+			}
+		}
+		for i := range bookings {
+			bookings[i].Status = models.BookingStatusConfirmed
+			if err := r.Booking().Update(ctx, &bookings[i]); err != nil {
+				return err
+			}
+			*confirmedBookingIDs = append(*confirmedBookingIDs, bookings[i].ID)
+		}
+	case xendit.StatusExpired:
+		checkout.Status = models.PaymentStatusExpired
+		for i := range payments {
+			payments[i].Status = models.PaymentStatusExpired
+			if err := r.Payment().Update(ctx, &payments[i]); err != nil {
+				return err
+			}
+		}
+		for i := range bookings {
+			if bookings[i].Status == models.BookingStatusPending || bookings[i].Status == models.BookingStatusWaitingPayment {
+				bookings[i].Status = models.BookingStatusExpired
+				if err := r.Booking().Update(ctx, &bookings[i]); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return r.Checkout().Update(ctx, checkout)
+}
+
+func (c *paymentController) scheduleConfirmedBookings(bookingIDs []uint) {
+	if c.notif == nil {
+		return
+	}
+	for _, bookingID := range bookingIDs {
+		id := bookingID
 		go func() {
-			if scheduleErr := c.notif.ScheduleRemindersForBooking(context.Background(), confirmedBookingID); scheduleErr != nil {
-				log.Printf("payment: failed to schedule reminder for booking %d: %v", confirmedBookingID, scheduleErr)
+			if err := c.notif.ScheduleRemindersForBooking(context.Background(), id); err != nil {
+				log.Printf("payment: failed to schedule reminder for booking %d: %v", id, err)
 			}
 		}()
 	}
-
-	return nil
 }
 
 // verify mengambil ulang data invoice dari Xendit. Jika gagal (misal jaringan),
@@ -184,7 +281,83 @@ func (c *paymentController) DetailByBooking(ctx context.Context, actor Actor, bo
 	if err != nil {
 		return nil, err
 	}
+	if payment.CheckoutID != nil {
+		checkout, err := c.uow.Checkout().FindByID(ctx, *payment.CheckoutID)
+		if err != nil {
+			return nil, err
+		}
+		return c.syncCheckoutPayment(ctx, actor, checkout, payment)
+	}
 	response := dto.NewPaymentResponse(*payment)
+	return &response, nil
+}
+
+func (c *paymentController) SyncCheckoutStatus(ctx context.Context, actor Actor, checkoutID uint) (*dto.CheckoutResponse, error) {
+	checkout, err := c.uow.Checkout().FindByID(ctx, checkoutID)
+	if err != nil {
+		return nil, err
+	}
+	if checkout.UserID != actor.UserID && !actor.IsAdmin() {
+		return nil, apperror.NotFound("checkout not found")
+	}
+	payments, err := c.uow.Payment().FindByCheckoutID(ctx, checkout.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(payments) > 0 {
+		_, err := c.syncCheckoutPayment(ctx, actor, checkout, &payments[0])
+		if err != nil {
+			return nil, err
+		}
+	}
+	checkoutController := &checkoutController{uow: c.uow, invoices: c.invoices}
+	return checkoutController.Detail(ctx, actor, checkout.ID)
+}
+
+func (c *paymentController) syncCheckoutPayment(
+	ctx context.Context,
+	actor Actor,
+	checkout *models.Checkout,
+	payment *models.Payment,
+) (*dto.PaymentResponse, error) {
+	if checkout.UserID != actor.UserID && !actor.IsAdmin() {
+		return nil, apperror.NotFound("checkout not found")
+	}
+	if checkout.Status != models.PaymentStatusPending || checkout.InvoiceID == "" || c.invoices == nil {
+		response := dto.NewPaymentResponse(*payment)
+		return &response, nil
+	}
+	invoice, err := c.invoices.GetInvoice(ctx, checkout.InvoiceID)
+	if err != nil {
+		log.Printf("payment: failed to fetch checkout invoice from xendit: %v", err)
+		response := dto.NewPaymentResponse(*payment)
+		return &response, nil
+	}
+	var confirmedIDs []uint
+	err = c.uow.Atomic(ctx, func(r repository.Registry) error {
+		current, err := r.Checkout().FindByID(ctx, checkout.ID)
+		if err != nil {
+			return err
+		}
+		if current.Status != models.PaymentStatusPending {
+			return nil
+		}
+		payload := xendit.WebhookPayload{
+			ExternalID: current.ExternalID, Status: invoice.Status, Amount: invoice.Amount,
+			PaidAmount: invoice.PaidAmount, PaidAt: invoice.PaidAt,
+			PaymentMethod: invoice.PaymentMethod, PaymentChannel: invoice.PaymentChannel,
+		}
+		return applyCheckoutWebhook(ctx, r, current, payload, &confirmedIDs)
+	})
+	if err != nil {
+		return nil, err
+	}
+	c.scheduleConfirmedBookings(confirmedIDs)
+	updated, err := c.uow.Payment().FindByBookingID(ctx, payment.BookingID)
+	if err != nil {
+		return nil, err
+	}
+	response := dto.NewPaymentResponse(*updated)
 	return &response, nil
 }
 
@@ -215,6 +388,13 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 	payment, err := c.uow.Payment().FindByBookingID(ctx, bookingID)
 	if err != nil {
 		return nil, err
+	}
+	if payment.CheckoutID != nil {
+		checkout, err := c.uow.Checkout().FindByID(ctx, *payment.CheckoutID)
+		if err != nil {
+			return nil, err
+		}
+		return c.syncCheckoutPayment(ctx, actor, checkout, payment)
 	}
 
 	// Jika payment sudah berstatus final (PAID), kembalikan langsung
@@ -289,4 +469,3 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 	res := dto.NewPaymentResponse(*payment)
 	return &res, nil
 }
-

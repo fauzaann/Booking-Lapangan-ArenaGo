@@ -153,6 +153,9 @@ func (m *mockBookingRepo) FindDetailByIDForUpdate(ctx context.Context, id uint) 
 func (m *mockBookingRepo) FindByCode(ctx context.Context, code string) (*models.Booking, error) {
 	return m.booking, nil
 }
+func (m *mockBookingRepo) FindByCheckoutID(context.Context, uint) ([]models.Booking, error) {
+	return nil, nil
+}
 func (m *mockBookingRepo) FindAll(ctx context.Context, filter repository.BookingFilter) ([]models.Booking, int64, error) {
 	return nil, 0, nil
 }
@@ -193,6 +196,7 @@ func (m *mockUOW) Field() repository.FieldRepository       { return nil }
 func (m *mockUOW) Schedule() repository.ScheduleRepository { return nil }
 func (m *mockUOW) Booking() repository.BookingRepository   { return m.bookingRepo }
 func (m *mockUOW) Payment() repository.PaymentRepository   { return nil }
+func (m *mockUOW) Checkout() repository.CheckoutRepository { return nil }
 func (m *mockUOW) AuditLog() repository.AuditLogRepository { return nil }
 func (m *mockUOW) Atomic(ctx context.Context, fn func(r repository.Registry) error) error {
 	return fn(m)

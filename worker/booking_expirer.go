@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"Booking-Lapangan/models"
 	"Booking-Lapangan/repository"
 )
 
@@ -56,6 +57,28 @@ func (w *BookingExpirer) runOnce(ctx context.Context) {
 		expired, err := r.Booking().MarkExpired(ctx, bookingIDs)
 		if err != nil {
 			return err
+		}
+		checkoutIDs := make(map[uint]struct{})
+		for _, bookingID := range bookingIDs {
+			payment, err := r.Payment().FindByBookingID(ctx, bookingID)
+			if err != nil {
+				return err
+			}
+			if payment.CheckoutID != nil {
+				checkoutIDs[*payment.CheckoutID] = struct{}{}
+			}
+		}
+		for checkoutID := range checkoutIDs {
+			checkout, err := r.Checkout().FindByID(ctx, checkoutID)
+			if err != nil {
+				return err
+			}
+			if checkout.Status == models.PaymentStatusPending {
+				checkout.Status = models.PaymentStatusExpired
+				if err := r.Checkout().Update(ctx, checkout); err != nil {
+					return err
+				}
+			}
 		}
 		if expired > 0 {
 			log.Printf("worker: %d booking(s) marked as EXPIRED", expired)

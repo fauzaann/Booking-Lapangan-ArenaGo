@@ -17,6 +17,18 @@ type CreateBookingRequest struct {
 	Notes       string `json:"notes" validate:"omitempty,max=255"`
 }
 
+type CheckoutRequest struct {
+	Items []CheckoutItemRequest `json:"items" validate:"required,min=1,max=10,dive"`
+}
+
+type CheckoutItemRequest struct {
+	ItemID      string `json:"item_id" validate:"required,max=80"`
+	FieldID     uint   `json:"field_id" validate:"required,gt=0"`
+	BookingDate string `json:"booking_date" validate:"required,dateonly,notpast"`
+	StartTime   string `json:"start_time" validate:"required,clock"`
+	EndTime     string `json:"end_time" validate:"required,clock"`
+}
+
 // CancelBookingRequest optionally records why the owner cancelled a booking.
 type CancelBookingRequest struct {
 	Reason string `json:"reason" validate:"omitempty,max=255"`
@@ -87,6 +99,26 @@ type BookingCreatedResponse struct {
 	PaymentURL    string     `json:"payment_url"`
 	PaymentStatus string     `json:"payment_status"`
 	ExpiredAt     *time.Time `json:"expired_at,omitempty"`
+}
+
+type CheckoutCreatedResponse struct {
+	CheckoutID    uint              `json:"checkout_id"`
+	CheckoutCode  string            `json:"checkout_code"`
+	TotalPrice    float64           `json:"total_price"`
+	PaymentURL    string            `json:"payment_url"`
+	PaymentStatus string            `json:"payment_status"`
+	ExpiredAt     *time.Time        `json:"expired_at,omitempty"`
+	Bookings      []BookingResponse `json:"bookings"`
+}
+
+type CheckoutResponse struct {
+	CheckoutID    uint              `json:"checkout_id"`
+	CheckoutCode  string            `json:"checkout_code"`
+	TotalPrice    float64           `json:"total_price"`
+	PaymentURL    string            `json:"payment_url,omitempty"`
+	PaymentStatus string            `json:"payment_status"`
+	ExpiredAt     *time.Time        `json:"expired_at,omitempty"`
+	Bookings      []BookingResponse `json:"bookings"`
 }
 
 // NewBookingResponse memetakan model booking menjadi response.

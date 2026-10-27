@@ -13,6 +13,7 @@ export default function PaymentResult() {
   const location = useLocation();
   const failed = location.pathname.endsWith("/failed");
   const [booking, setBooking] = useState(null);
+  const [checkout, setCheckout] = useState(null);
   const [payment, setPayment] = useState(null);
   const [loading, setLoading] = useState(!failed);
   const [error, setError] = useState("");
@@ -28,10 +29,13 @@ export default function PaymentResult() {
     let timer;
     const searchParams = new URLSearchParams(location.search);
     const queryBookingId = searchParams.get("booking_id");
+    const queryCheckoutId = searchParams.get("checkout_id");
     const stored = JSON.parse(localStorage.getItem("arenago:pending-payment") || "null");
+    const storedCheckout = JSON.parse(localStorage.getItem("arenago:pending-checkout") || "null");
     const targetBookingId = queryBookingId || stored?.bookingId;
+    const targetCheckoutId = queryCheckoutId || storedCheckout?.checkoutId;
 
-    if (!targetBookingId) {
+    if (!targetBookingId && !targetCheckoutId) {
       setError("Data booking tidak ditemukan. Silakan cek menu Riwayat.");
       setLoading(false);
       return undefined;
@@ -39,6 +43,28 @@ export default function PaymentResult() {
 
     async function checkStatus() {
       try {
+        if (targetCheckoutId) {
+          try {
+            await api.syncCheckoutPayment(targetCheckoutId);
+          } catch (syncErr) {
+            console.warn("Checkout payment sync attempt:", syncErr);
+          }
+          const checkoutResult = await api.checkout(targetCheckoutId);
+          if (cancelled) return;
+          setCheckout(checkoutResult.data);
+          if (checkoutResult.data?.payment_status === "PAID") {
+            localStorage.removeItem("arenago:pending-checkout");
+            setLoading(false);
+            return;
+          }
+          if (attempt < MAX_ATTEMPTS) {
+            timer = window.setTimeout(() => setAttempt((value) => value + 1), 2000);
+          } else {
+            setLoading(false);
+          }
+          return;
+        }
+
         // Coba sinkronisasi langsung status dari Xendit (khususnya untuk localhost / development)
         try {
           await api.syncPayment(targetBookingId);
@@ -80,7 +106,7 @@ export default function PaymentResult() {
 
   if (failed) return <ResultMessage />;
 
-  const paid = payment?.status === "PAID" || booking?.status === "CONFIRMED";
+  const paid = checkout?.payment_status === "PAID" || payment?.status === "PAID" || booking?.status === "CONFIRMED";
   return (
     <div className="flex min-h-[calc(100vh-160px)] items-center justify-center px-5 py-12 sm:px-8">
       <Card className="w-full max-w-lg text-center">
@@ -91,9 +117,36 @@ export default function PaymentResult() {
           {paid ? "Pembayaran Berhasil" : "Memverifikasi Pembayaran"}
         </h1>
         <p className="mb-6 text-sm text-ink-muted">
-          {error || (paid ? "Booking Anda sudah terkonfirmasi." : loading ? "Kami sedang memverifikasi pembayaran Anda ke Xendit..." : "Pembayaran belum terkonfirmasi. Jika Anda sudah menyelesaikan pembayaran di Xendit, klik tombol 'Sinkronkan Pembayaran' di bawah.")}
+          {error || (paid ? `${checkout?.bookings?.length || 1} booking Anda sudah terkonfirmasi.` : loading ? "Kami sedang memverifikasi pembayaran Anda ke Xendit..." : "Pembayaran belum terkonfirmasi. Jika Anda sudah menyelesaikan pembayaran di Xendit, klik tombol 'Sinkronkan Pembayaran' di bawah.")}
         </p>
-        {booking && (
+        {checkout ? (
+          <div className="mb-6 space-y-3 rounded-md bg-surface px-5 py-4 text-left text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-ink-faint">Kode checkout</span>
+              <span className="font-medium">{checkout.checkout_code}</span>
+            </div>
+            {checkout.bookings?.map((item) => (
+              <div key={item.id} className="border-t border-border pt-3">
+                <div className="flex justify-between gap-4">
+                  <span className="text-ink-faint">Booking</span>
+                  <span className="font-medium">{item.booking_code}</span>
+                </div>
+                <div className="mt-1 flex justify-between gap-4">
+                  <span className="text-ink-faint">Lapangan</span>
+                  <span className="font-medium">{item.field_name || `Lapangan #${item.field_id}`}</span>
+                </div>
+              </div>
+            ))}
+            <div className="flex justify-between gap-4 border-t border-border pt-3">
+              <span className="text-ink-faint">Total</span>
+              <span className="font-medium">{formatIDR(checkout.total_price)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-ink-faint">Status</span>
+              <StatusBadge status={paid ? "confirmed" : "pending"} label={paid ? "Terkonfirmasi" : "Menunggu pembayaran"} />
+            </div>
+          </div>
+        ) : booking && (
           <div className="mb-6 space-y-3 rounded-md bg-surface px-5 py-4 text-left text-sm">
             <div className="flex justify-between gap-4">
               <span className="text-ink-faint">Booking</span>

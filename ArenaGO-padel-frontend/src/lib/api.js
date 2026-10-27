@@ -17,7 +17,9 @@ async function request(path, options = {}) {
     if (response.status === 401 && token && message === "invalid or expired token") {
       window.dispatchEvent(new Event("arenago:session-expired"));
     }
-    throw new Error(message || "Permintaan gagal diproses.");
+    const error = new Error(message || "Permintaan gagal diproses.");
+    error.details = body.error;
+    throw error;
   }
   return body;
 }
@@ -58,6 +60,9 @@ export const api = {
   },
   availability: (id, date) => request(`/fields/${id}/availability?date=${encodeURIComponent(date)}`),
   createBooking: (payload) => request("/bookings", { method: "POST", body: JSON.stringify(payload) }),
+  createCheckout: (payload) => request("/checkouts", { method: "POST", body: JSON.stringify(payload) }),
+  checkout: (id) => request(`/checkouts/${id}`),
+  syncCheckoutPayment: (id) => request(`/checkouts/${id}/sync-payment`, { method: "POST" }),
   booking: (id) => request(`/bookings/${id}`),
   cancelBooking: (id, reason = "") => request(`/bookings/${id}/cancel`, {
     method: "POST",

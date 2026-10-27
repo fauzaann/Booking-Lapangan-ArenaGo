@@ -32,6 +32,7 @@ type BookingRepository interface {
 	FindDetailByID(ctx context.Context, id uint) (*models.Booking, error)
 	FindDetailByIDForUpdate(ctx context.Context, id uint) (*models.Booking, error)
 	FindByCode(ctx context.Context, code string) (*models.Booking, error)
+	FindByCheckoutID(ctx context.Context, checkoutID uint) ([]models.Booking, error)
 	FindAll(ctx context.Context, filter BookingFilter) ([]models.Booking, int64, error)
 	FindActiveByFieldAndDate(ctx context.Context, fieldID uint, date time.Time) ([]models.Booking, error)
 	HasOverlap(ctx context.Context, fieldID uint, date time.Time, startTime, endTime string) (bool, error)
@@ -140,6 +141,23 @@ func (r *bookingRepository) FindByCode(ctx context.Context, code string) (*model
 		return nil, translate(err, "booking not found")
 	}
 	return &booking, nil
+}
+
+func (r *bookingRepository) FindByCheckoutID(ctx context.Context, checkoutID uint) ([]models.Booking, error) {
+	var bookings []models.Booking
+	err := r.db.WithContext(ctx).
+		Joins("JOIN payments ON payments.booking_id = bookings.id").
+		Where("payments.checkout_id = ?", checkoutID).
+		Preload("Field").
+		Preload("User").
+		Preload("Items").
+		Preload("Payment").
+		Order("bookings.id ASC").
+		Find(&bookings).Error
+	if err != nil {
+		return nil, translate(err, "booking not found")
+	}
+	return bookings, nil
 }
 
 // FindAll mengambil booking dengan filter pemilik, field, status, tanggal, dan pagination.

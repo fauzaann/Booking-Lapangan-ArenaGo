@@ -75,6 +75,19 @@ func (h *PaymentHandler) SyncPayment(c *gin.Context) {
 	response.OK(c, "Payment status synchronized", payment)
 }
 
+func (h *PaymentHandler) SyncCheckout(c *gin.Context) {
+	checkoutID, ok := uintParam(c, "id")
+	if !ok {
+		return
+	}
+	checkout, err := h.payments.SyncCheckoutStatus(c.Request.Context(), middleware.MustActor(c), checkoutID)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, "Checkout payment status synchronized", checkout)
+}
+
 // List menangani GET /api/v1/admin/payments.
 func (h *PaymentHandler) List(c *gin.Context) {
 	var query dto.PaymentFilterQuery

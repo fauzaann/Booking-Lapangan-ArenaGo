@@ -26,6 +26,7 @@ func (s PaymentStatus) Valid() bool {
 type Payment struct {
 	ID             uint          `gorm:"primaryKey" json:"id"`
 	BookingID      uint          `gorm:"not null;uniqueIndex" json:"booking_id"`
+	CheckoutID     *uint         `gorm:"index" json:"checkout_id,omitempty"`
 	ExternalID     string        `gorm:"type:varchar(80);not null;uniqueIndex" json:"external_id"`
 	InvoiceID      string        `gorm:"type:varchar(80);index" json:"invoice_id"`
 	InvoiceURL     string        `gorm:"type:varchar(255)" json:"invoice_url"`

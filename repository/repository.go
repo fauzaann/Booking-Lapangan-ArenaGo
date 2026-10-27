@@ -21,6 +21,7 @@ type Registry interface {
 	Schedule() ScheduleRepository
 	Booking() BookingRepository
 	Payment() PaymentRepository
+	Checkout() CheckoutRepository
 	AuditLog() AuditLogRepository
 }
 
@@ -54,6 +55,9 @@ func (r *registry) Booking() BookingRepository { return NewBookingRepository(r.d
 
 // Payment mengembalikan repository payment pada database aktif.
 func (r *registry) Payment() PaymentRepository { return NewPaymentRepository(r.db) }
+
+// Checkout mengembalikan repository checkout pada database aktif.
+func (r *registry) Checkout() CheckoutRepository { return NewCheckoutRepository(r.db) }
 
 // AuditLog mengembalikan repository audit log pada database aktif.
 func (r *registry) AuditLog() AuditLogRepository { return NewAuditLogRepository(r.db) }

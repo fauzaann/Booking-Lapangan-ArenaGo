@@ -19,6 +19,7 @@ func Migrate(db *gorm.DB) error {
 		&models.Booking{},
 		&models.BookingItem{},
 		&models.Payment{},
+		&models.Checkout{},
 		&models.AuditLog{},
 	)
 	if err != nil {

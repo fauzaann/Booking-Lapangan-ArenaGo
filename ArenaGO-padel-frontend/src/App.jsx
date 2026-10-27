@@ -1,10 +1,12 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
+import { CartProvider } from "./context/CartContext";
 import RequireAuth from "./components/routing/RequireAuth";
 import AppLayout from "./layouts/AppLayout";
 import AuthLayout from "./layouts/AuthLayout";
 import Explore from "./pages/Explore";
 import SelectSlot from "./pages/SelectSlot";
+import Cart from "./pages/Cart";
 import Confirmation from "./pages/Confirmation";
 import Payment from "./pages/Payment";
 import PaymentResult from "./pages/PaymentResult";
@@ -23,6 +25,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <CartProvider>
         <Routes>
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<Login />} />
@@ -40,6 +43,14 @@ export default function App() {
               element={
                 <RequireAuth>
                   <Confirmation />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/keranjang"
+              element={
+                <RequireAuth>
+                  <Cart />
                 </RequireAuth>
               }
             />
@@ -127,6 +138,7 @@ export default function App() {
             />
           </Route>
         </Routes>
+        </CartProvider>
       </BrowserRouter>
     </AuthProvider>
   );

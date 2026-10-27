@@ -73,6 +73,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - Melihat detail lapangan, jadwal operasional, dan ketersediaan slot per tanggal
 - Cache Redis opsional untuk daftar dan detail lapangan (TTL default 5 menit); PostgreSQL tetap menjadi sumber data utama
 - Membuat booking dengan pengecekan overlap waktu
+- Menyimpan beberapa booking/lapangan dalam keranjang dan membayar semuanya dengan satu invoice; slot baru divalidasi dan dikunci saat checkout
 - Mendapatkan `payment_url` (invoice Xendit) dan memantau status pembayaran
 - Melihat riwayat & detail booking miliknya sendiri
 - Membatalkan booking sesuai aturan
@@ -297,6 +298,9 @@ Spesifikasi mentah: `http://localhost:8080/docs/openapi.yaml` (file: `docs/opena
 | GET | `/api/v1/bookings/:id` | User |
 | GET | `/api/v1/bookings/:id/payment` | User |
 | DELETE | `/api/v1/bookings/:id` | User |
+| POST | `/api/v1/checkouts` | User |
+| GET | `/api/v1/checkouts/:id` | User |
+| POST | `/api/v1/checkouts/:id/sync-payment` | User |
 | GET | `/api/v1/notifications` | User |
 | GET | `/api/v1/notifications/unread-count` | User |
 | PATCH | `/api/v1/notifications/:id/read` | User |
@@ -386,6 +390,43 @@ COMMIT
         ↓
 Response 201 + payment_url
 ```
+
+### Keranjang dan checkout gabungan
+
+Keranjang frontend hanya menyimpan draft lokal dan tidak mengunci slot. Saat
+`POST /api/v1/checkouts` dipanggil, backend mengunci pasangan lapangan/tanggal
+secara konsisten, mengecek ulang jam operasional dan semua overlap, lalu membuat
+seluruh booking dan satu invoice Xendit dalam satu checkout.
+
+Contoh request:
+
+```json
+{
+  "items": [
+    {
+      "item_id": "cart-item-1",
+      "field_id": 1,
+      "booking_date": "2030-01-15",
+      "start_time": "10:00",
+      "end_time": "12:00"
+    },
+    {
+      "item_id": "cart-item-2",
+      "field_id": 2,
+      "booking_date": "2030-01-15",
+      "start_time": "13:00",
+      "end_time": "14:00"
+    }
+  ]
+}
+```
+
+Harga dihitung dari data lapangan di server. Jika satu atau lebih slot sudah
+terisi saat checkout, seluruh checkout dibatalkan dan response `409` menyertakan
+`error.conflicts` dengan `item_id` agar item yang bentrok dapat ditandai di
+keranjang. Tidak ada invoice atau booking parsial yang dibuat. Pembayaran satu
+invoice memperbarui semua payment dan booking dalam checkout secara atomik.
+Status checkout dapat dibaca kembali dan disinkronkan melalui endpoint di atas.
 
 **Aturan overlap** menggunakan interval half-open `[start, end)`:
 `existing.start < request.end AND existing.end > request.start`.
