@@ -77,6 +77,8 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - Mendapatkan `payment_url` (invoice Xendit) dan memantau status pembayaran
 - Melihat riwayat & detail booking miliknya sendiri
 - Membatalkan booking sesuai aturan
+- Memberi satu rating 1–5 dan ulasan opsional untuk setiap booking berstatus `COMPLETED`
+- Melihat rata-rata rating dan ulasan publik lapangan; identitas penulis disamarkan
 - Kotak masuk notifikasi in-app dan pengingat jadwal bermain (H-24 & H-2 jam sebelum main) berbasis MongoDB
 
 **Admin**
@@ -86,6 +88,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - Mengatur jam operasional per hari
 - Melihat seluruh booking, mengubah status booking
 - Melihat seluruh pembayaran dan data user
+- Memoderasi ulasan dengan menyembunyikan atau menampilkan kembali ulasan
 - Monitoring log pengingat jadwal bermain (`reminder_jobs` MongoDB)
 
 **Sistem**
@@ -198,6 +201,7 @@ booking-field/
 | `fields` | id, name, description, type, location, price_per_hour, facilities, status, deleted_at |
 | `schedules` | id, field_id, day, open_time, close_time, is_closed — unique (field_id, day) |
 | `bookings` | id, booking_code (unique), user_id, field_id, booking_date, start_time, end_time, duration, total_price, status, notes, cancelled_at |
+| `ratings` | id, booking_id (unique), user_id, field_id, rating (1–5), review (maks. 1.000 karakter), is_visible |
 | `booking_items` | id, booking_id, start_time, end_time, price (rincian per jam) |
 | `payments` | id, booking_id (unique), external_id (unique), invoice_id, invoice_url, amount, payment_method, payment_channel, status, paid_at, expired_at |
 
@@ -293,10 +297,13 @@ Spesifikasi mentah: `http://localhost:8080/docs/openapi.yaml` (file: `docs/opena
 | GET | `/api/v1/fields/:id` | Publik |
 | GET | `/api/v1/fields/:id/availability?date=` | Publik |
 | GET | `/api/v1/fields/:id/schedules` | Publik |
+| GET | `/api/v1/fields/:id/ratings/summary` | Publik |
+| GET | `/api/v1/fields/:id/ratings?page=1&limit=10` | Publik |
 | POST | `/api/v1/bookings` | User |
 | GET | `/api/v1/bookings` | User |
 | GET | `/api/v1/bookings/:id` | User |
 | GET | `/api/v1/bookings/:id/payment` | User |
+| GET/POST | `/api/v1/bookings/:id/review` | Pemilik booking |
 | DELETE | `/api/v1/bookings/:id` | User |
 | POST | `/api/v1/checkouts` | User |
 | GET | `/api/v1/checkouts/:id` | User |
@@ -314,6 +321,8 @@ Spesifikasi mentah: `http://localhost:8080/docs/openapi.yaml` (file: `docs/opena
 | GET | `/api/v1/admin/bookings` | Admin |
 | PATCH | `/api/v1/admin/bookings/:id/status` | Admin |
 | GET | `/api/v1/admin/payments` | Admin |
+| GET | `/api/v1/admin/ratings?is_visible=true` | Admin |
+| PATCH | `/api/v1/admin/ratings/:id/moderation` | Admin |
 | GET | `/api/v1/admin/reminders` | Admin |
 
 ### Format Response
@@ -362,6 +371,8 @@ Authorization: Bearer <token>
 ```
 
 Otorisasi role dijaga middleware `RequireRole(models.RoleAdmin)` pada seluruh grup `/api/v1/admin` — user biasa mendapat `403`.
+
+Rating hanya dapat dibuat oleh pemilik booking yang sudah `COMPLETED`; satu booking hanya dapat dinilai sekali. `user_id` dan `field_id` selalu diambil dari data booking di server. Ulasan publik yang disembunyikan admin tidak dihitung dalam ringkasan rating. Pengguna tidak dapat mengedit atau menghapus rating pada MVP.
 
 ## Alur Booking
 

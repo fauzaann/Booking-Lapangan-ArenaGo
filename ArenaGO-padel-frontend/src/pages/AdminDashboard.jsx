@@ -80,6 +80,10 @@ export default function AdminDashboard() {
             <Icon name="history" size={17} />
             Aktivitas
           </Link>
+          <Link to="/admin/ulasan" className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2.5 text-sm font-medium hover:border-ink-muted">
+            <Icon name="rate_review" size={17} />
+            Moderasi ulasan
+          </Link>
           <Link to="/admin/transaksi" className="inline-flex items-center gap-2 rounded-full bg-onyx px-4 py-2.5 text-sm font-medium text-canvas hover:bg-onyx-hover">
             <Icon name="receipt_long" size={17} />
             Lihat transaksi

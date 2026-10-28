@@ -5,7 +5,7 @@ import { formatIDR } from "../../lib/format";
 export default function CourtCard({ court }) {
   return (
     <Link
-      to={`/jadwal/${court.id}`}
+      to={`/lapangan/${court.id}`}
       className="group block overflow-hidden rounded-lg border border-border bg-surface transition-shadow duration-200 hover:shadow-raised"
     >
       <div
@@ -22,10 +22,12 @@ export default function CourtCard({ court }) {
             VIP
           </span>
         )}
-        <div className="absolute left-4 top-4 flex items-center gap-1 rounded-full bg-canvas/90 px-2.5 py-1 text-xs font-semibold">
-          <Icon name="star" size={14} filled className="text-champagne" />
-          {court.rating}
-        </div>
+        {typeof court.rating === "number" && (
+          <div className="absolute left-4 top-4 flex items-center gap-1 rounded-full bg-canvas/90 px-2.5 py-1 text-xs font-semibold">
+            <Icon name="star" size={14} filled className="text-champagne" />
+            {court.rating.toFixed(1)}{court.reviews > 0 ? ` · ${court.reviews}` : ""}
+          </div>
+        )}
       </div>
 
       <div className="p-6">

@@ -23,6 +23,7 @@ func (m *paymentMockUOW) User() repository.UserRepository         { return nil }
 func (m *paymentMockUOW) Field() repository.FieldRepository       { return nil }
 func (m *paymentMockUOW) Schedule() repository.ScheduleRepository { return nil }
 func (m *paymentMockUOW) Booking() repository.BookingRepository   { return m.bookingRepo }
+func (m *paymentMockUOW) Rating() repository.RatingRepository     { return nil }
 func (m *paymentMockUOW) Payment() repository.PaymentRepository   { return m.paymentRepo }
 func (m *paymentMockUOW) Checkout() repository.CheckoutRepository {
 	if m.checkoutRepo != nil {

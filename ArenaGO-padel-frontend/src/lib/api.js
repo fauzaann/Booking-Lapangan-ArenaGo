@@ -19,6 +19,7 @@ async function request(path, options = {}) {
     }
     const error = new Error(message || "Permintaan gagal diproses.");
     error.details = body.error;
+    error.status = response.status;
     throw error;
   }
   return body;
@@ -58,12 +59,16 @@ export const api = {
     const result = await request(`/fields/${id}`);
     return { ...result, data: mapField(result.data) };
   },
+  fieldRatingSummary: (id) => request(`/fields/${id}/ratings/summary`),
+  fieldRatings: (id, params = {}) => request(`/fields/${id}/ratings?${new URLSearchParams({ page: "1", limit: "10", ...params })}`),
   availability: (id, date) => request(`/fields/${id}/availability?date=${encodeURIComponent(date)}`),
   createBooking: (payload) => request("/bookings", { method: "POST", body: JSON.stringify(payload) }),
   createCheckout: (payload) => request("/checkouts", { method: "POST", body: JSON.stringify(payload) }),
   checkout: (id) => request(`/checkouts/${id}`),
   syncCheckoutPayment: (id) => request(`/checkouts/${id}/sync-payment`, { method: "POST" }),
   booking: (id) => request(`/bookings/${id}`),
+  bookingRating: (id) => request(`/bookings/${id}/review`),
+  createRating: (id, payload) => request(`/bookings/${id}/review`, { method: "POST", body: JSON.stringify(payload) }),
   cancelBooking: (id, reason = "") => request(`/bookings/${id}/cancel`, {
     method: "POST",
     body: JSON.stringify(reason ? { reason } : {}),
@@ -77,6 +82,11 @@ export const api = {
   adminBooking: (id) => request(`/admin/bookings/${id}`),
   adminFields: () => request("/admin/fields?page=1&limit=50"),
   adminPayments: (params = {}) => request(`/admin/payments?${new URLSearchParams({ page: "1", limit: "50", ...params })}`),
+  adminRatings: (params = {}) => request(`/admin/ratings?${new URLSearchParams({ page: "1", limit: "20", ...params })}`),
+  moderateRating: (id, isVisible) => request(`/admin/ratings/${id}/moderation`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_visible: isVisible }),
+  }),
   assistantChat: (payload) => request("/assistant/chat", { method: "POST", body: JSON.stringify(payload) }),
   notifications: (params = {}) => request(`/notifications?${new URLSearchParams(params)}`),
   unreadNotificationCount: () => request("/notifications/unread-count"),
