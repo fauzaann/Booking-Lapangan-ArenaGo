@@ -136,6 +136,7 @@ func main() {
 
 	authController := controllers.NewAuthController(uow.User(), tokens)
 	fieldController := controllers.NewFieldController(uow, fieldcache.New(redisClient, cfg.Redis.CacheTTL))
+	ratingController := controllers.NewRatingController(uow)
 	bookingController := controllers.NewBookingController(uow, invoices, controllers.BookingPolicy{
 		MinHours:           cfg.Booking.MinHours,
 		MaxHours:           cfg.Booking.MaxHours,
@@ -169,6 +170,7 @@ func main() {
 		Assistant:    handler.NewAssistantHandler(controllers.NewAssistantController(assistant), validate),
 		Admin:        handler.NewAdminHandler(adminController, validate),
 		Notification: notifHandler,
+		Rating:       handler.NewRatingHandler(ratingController, validate),
 		AuditLog:     uow.AuditLog(),
 	})
 

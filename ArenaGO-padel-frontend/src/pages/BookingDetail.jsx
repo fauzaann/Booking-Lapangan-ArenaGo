@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -24,6 +24,12 @@ export default function BookingDetail() {
   const { user } = useAuth();
   const [booking, setBooking] = useState(null);
   const [payment, setPayment] = useState(null);
+  const [rating, setRating] = useState(null);
+  const [ratingValue, setRatingValue] = useState(5);
+  const [reviewText, setReviewText] = useState("");
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [ratingError, setRatingError] = useState("");
+  const [ratingFeedback, setRatingFeedback] = useState("");
   const [error, setError] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState("");
@@ -33,24 +39,29 @@ export default function BookingDetail() {
   const [cancelError, setCancelError] = useState("");
   const [cancelFeedback, setCancelFeedback] = useState("");
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
-      const [bookingResult, paymentResult] = await Promise.all([
+      const [bookingResult, paymentResult, ratingResult] = await Promise.all([
         api.booking(id),
         api.bookingPayment(id),
+        api.bookingRating(id).catch((err) => {
+          if (err.status === 404) return null;
+          throw err;
+        }),
       ]);
       setBooking(bookingResult.data);
       setPayment(paymentResult.data);
-      return { booking: bookingResult.data, payment: paymentResult.data };
+      setRating(ratingResult?.data || null);
+      return { booking: bookingResult.data, payment: paymentResult.data, rating: ratingResult?.data || null };
     } catch (err) {
       setError(err.message);
       return null;
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     loadData();
-  }, [id]);
+  }, [loadData]);
 
   const handleSyncPayment = async () => {
     setSyncing(true);
@@ -84,6 +95,22 @@ export default function BookingDetail() {
       setCancelError(err.message || "Gagal membatalkan booking.");
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const handleSubmitRating = async (event) => {
+    event.preventDefault();
+    setRatingSubmitting(true);
+    setRatingError("");
+    setRatingFeedback("");
+    try {
+      const result = await api.createRating(id, { rating: ratingValue, review: reviewText.trim() });
+      setRating(result.data);
+      setRatingFeedback("Terima kasih, rating dan ulasan Anda berhasil dikirim.");
+    } catch (err) {
+      setRatingError(err.message || "Gagal mengirim ulasan.");
+    } finally {
+      setRatingSubmitting(false);
     }
   };
 
@@ -185,6 +212,69 @@ export default function BookingDetail() {
           )}
         </Card>
       </div>
+
+      {booking.status === "COMPLETED" && (
+        <Card className="mt-6">
+          <h2 className="mb-2 font-display text-xl">Rating & ulasan lapangan</h2>
+          <p className="mb-5 text-sm text-ink-muted">
+            Bagikan pengalaman Anda untuk membantu pemain lain memilih lapangan.
+          </p>
+          {rating ? (
+            <div className="rounded-md bg-canvas p-4">
+              <div className="flex items-center gap-1" aria-label={`Rating ${rating.rating} dari 5`}>
+                {Array.from({ length: 5 }, (_, index) => (
+                  <Icon key={index} name="star" size={19} filled={index < rating.rating} className={index < rating.rating ? "text-champagne" : "text-border"} />
+                ))}
+                <span className="ml-2 text-sm font-medium">{rating.rating}/5</span>
+              </div>
+              {rating.review && <p className="mt-3 whitespace-pre-line text-sm text-ink-muted">{rating.review}</p>}
+              <p className="mt-3 text-xs text-ink-faint">Ulasan Anda sudah dikirim dan tidak dapat diubah.</p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmitRating}>
+              <fieldset>
+                <legend className="mb-2 text-sm font-medium">Pilih rating</legend>
+                <div className="flex gap-1" role="radiogroup" aria-label="Rating lapangan">
+                  {Array.from({ length: 5 }, (_, index) => {
+                    const value = index + 1;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={ratingValue === value}
+                        aria-label={`${value} bintang`}
+                        onClick={() => setRatingValue(value)}
+                        className="rounded p-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-onyx"
+                      >
+                        <Icon name="star" size={28} filled={value <= ratingValue} className={value <= ratingValue ? "text-champagne" : "text-border"} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <label htmlFor="review-text" className="mb-2 mt-5 block text-sm font-medium">
+                Ulasan (opsional)
+              </label>
+              <textarea
+                id="review-text"
+                value={reviewText}
+                onChange={(event) => setReviewText(event.target.value)}
+                maxLength={1000}
+                rows={4}
+                placeholder="Ceritakan pengalaman bermain Anda..."
+                className="w-full rounded-md border border-border bg-surface px-4 py-3 text-sm focus:border-onyx focus:outline-none"
+              />
+              <p className="mt-1 text-right text-xs text-ink-faint">{reviewText.length}/1000</p>
+              {ratingError && <p role="alert" className="mt-3 text-sm text-red-600">{ratingError}</p>}
+              {ratingFeedback && <p role="status" className="mt-3 text-sm text-emerald-700">{ratingFeedback}</p>}
+              <Button type="submit" className="mt-4" disabled={ratingSubmitting}>
+                {ratingSubmitting ? "Mengirim..." : "Kirim ulasan"}
+              </Button>
+            </form>
+          )}
+        </Card>
+      )}
 
       <Modal
         open={cancelOpen}

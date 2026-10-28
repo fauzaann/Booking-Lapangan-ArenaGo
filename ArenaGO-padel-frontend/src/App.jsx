@@ -5,6 +5,7 @@ import RequireAuth from "./components/routing/RequireAuth";
 import AppLayout from "./layouts/AppLayout";
 import AuthLayout from "./layouts/AuthLayout";
 import Explore from "./pages/Explore";
+import FieldDetail from "./pages/FieldDetail";
 import SelectSlot from "./pages/SelectSlot";
 import Cart from "./pages/Cart";
 import Confirmation from "./pages/Confirmation";
@@ -20,6 +21,7 @@ import TransactionList from "./pages/TransactionList";
 import TransactionDetail from "./pages/TransactionDetail";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminAuditLog from "./pages/AdminAuditLog";
+import AdminRatings from "./pages/AdminRatings";
 
 export default function App() {
   return (
@@ -35,6 +37,7 @@ export default function App() {
           <Route element={<AppLayout />}>
             {/* Public — browsing doesn't require an account */}
             <Route path="/" element={<Explore />} />
+            <Route path="/lapangan/:id" element={<FieldDetail />} />
             <Route path="/jadwal/:courtId" element={<SelectSlot />} />
 
             {/* Requires login — booking, payment, personal data */}
@@ -125,6 +128,14 @@ export default function App() {
               element={
                 <RequireAuth role="admin">
                   <AdminAuditLog />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/ulasan"
+              element={
+                <RequireAuth role="admin">
+                  <AdminRatings />
                 </RequireAuth>
               }
             />

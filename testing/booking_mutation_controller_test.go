@@ -142,6 +142,7 @@ func (u *mutationUnitOfWork) Schedule() repository.ScheduleRepository {
 func (u *mutationUnitOfWork) Booking() repository.BookingRepository {
 	return u.bookingRepo
 }
+func (u *mutationUnitOfWork) Rating() repository.RatingRepository { return nil }
 func (u *mutationUnitOfWork) Payment() repository.PaymentRepository {
 	return u.payment
 }

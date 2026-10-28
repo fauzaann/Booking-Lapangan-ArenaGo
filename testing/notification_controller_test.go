@@ -189,12 +189,15 @@ func (m *mockBookingRepo) CompleteFinished(ctx context.Context, now time.Time) (
 // mockUOW implements repository.UnitOfWork for tests
 type mockUOW struct {
 	bookingRepo repository.BookingRepository
+	fieldRepo   repository.FieldRepository
+	ratingRepo  repository.RatingRepository
 }
 
 func (m *mockUOW) User() repository.UserRepository         { return nil }
-func (m *mockUOW) Field() repository.FieldRepository       { return nil }
+func (m *mockUOW) Field() repository.FieldRepository       { return m.fieldRepo }
 func (m *mockUOW) Schedule() repository.ScheduleRepository { return nil }
 func (m *mockUOW) Booking() repository.BookingRepository   { return m.bookingRepo }
+func (m *mockUOW) Rating() repository.RatingRepository     { return m.ratingRepo }
 func (m *mockUOW) Payment() repository.PaymentRepository   { return nil }
 func (m *mockUOW) Checkout() repository.CheckoutRepository { return nil }
 func (m *mockUOW) AuditLog() repository.AuditLogRepository { return nil }

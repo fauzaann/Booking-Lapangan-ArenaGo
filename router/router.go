@@ -31,6 +31,7 @@ type Dependencies struct {
 	Assistant    *handler.AssistantHandler
 	Admin        *handler.AdminHandler
 	Notification *handler.NotificationHandler
+	Rating       *handler.RatingHandler
 	AuditLog     repository.AuditLogRepository
 }
 
@@ -78,6 +79,8 @@ func New(deps Dependencies) *gin.Engine {
 		fields.GET("/:id", deps.Field.Detail)
 		fields.GET("/:id/availability", deps.Field.Availability)
 		fields.GET("/:id/schedules", deps.Schedule.List)
+		fields.GET("/:id/ratings/summary", deps.Rating.Summary)
+		fields.GET("/:id/ratings", deps.Rating.ListField)
 	}
 
 	// ---------- Bookings (user login) ----------
@@ -87,6 +90,8 @@ func New(deps Dependencies) *gin.Engine {
 		bookings.GET("", deps.Booking.List)
 		bookings.GET("/:id", deps.Booking.Detail)
 		bookings.GET("/:id/payment", deps.Payment.DetailByBooking)
+		bookings.GET("/:id/review", deps.Rating.BookingRating)
+		bookings.POST("/:id/review", deps.Rating.Create)
 		bookings.POST("/:id/sync-payment", deps.Payment.SyncPayment)
 		bookings.POST("/:id/cancel", deps.Booking.CancelPost)
 		bookings.PATCH("/:id/reschedule", deps.Booking.Reschedule)
@@ -141,6 +146,8 @@ func New(deps Dependencies) *gin.Engine {
 		admin.PATCH("/bookings/:id/status", deps.Booking.UpdateStatus)
 
 		admin.GET("/payments", deps.Payment.List)
+		admin.GET("/ratings", deps.Rating.AdminList)
+		admin.PATCH("/ratings/:id/moderation", deps.Rating.Moderate)
 
 		if deps.Notification != nil {
 			admin.GET("/reminders", deps.Notification.AdminListReminders)
