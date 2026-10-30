@@ -34,8 +34,8 @@ function mapField(field, index = 0) {
     tags: field.facilities || [],
     type: field.type.replaceAll("_", " "),
     surface: field.description || "Lapangan premium",
-    rating: null,
-    reviews: 0,
+    rating: field.total_reviews > 0 ? Number(field.average_rating) : null,
+    reviews: field.total_reviews || 0,
     gradient: [
       "from-[#2D4B3E] to-[#14171A]",
       "from-[#1E3A5F] to-[#14171A]",

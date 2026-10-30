@@ -2,11 +2,13 @@ package controllers
 
 import (
 	"context"
+	"log"
 	"strings"
 
 	"Booking-Lapangan/dto"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/fieldcache"
 	"Booking-Lapangan/repository"
 )
 
@@ -20,11 +22,16 @@ type RatingController interface {
 }
 
 type ratingController struct {
-	uow repository.UnitOfWork
+	uow   repository.UnitOfWork
+	cache fieldcache.Store
 }
 
-func NewRatingController(uow repository.UnitOfWork) RatingController {
-	return &ratingController{uow: uow}
+func NewRatingController(uow repository.UnitOfWork, caches ...fieldcache.Store) RatingController {
+	controller := &ratingController{uow: uow}
+	if len(caches) > 0 {
+		controller.cache = caches[0]
+	}
+	return controller
 }
 
 func (c *ratingController) Create(ctx context.Context, actor Actor, bookingID uint, req dto.CreateRatingRequest) (*dto.RatingResponse, error) {
@@ -63,6 +70,7 @@ func (c *ratingController) Create(ctx context.Context, actor Actor, bookingID ui
 	if err != nil {
 		return nil, err
 	}
+	c.invalidateListCache(ctx)
 	response := dto.NewRatingResponse(*rating)
 	return &response, nil
 }
@@ -124,10 +132,20 @@ func (c *ratingController) SetVisibility(ctx context.Context, ratingID uint, vis
 	if err := c.uow.Rating().SetVisibility(ctx, ratingID, visible); err != nil {
 		return nil, err
 	}
+	c.invalidateListCache(ctx)
 	rating, err := c.uow.Rating().FindByID(ctx, ratingID)
 	if err != nil {
 		return nil, err
 	}
 	response := dto.NewAdminRatingResponses([]models.Rating{*rating})[0]
 	return &response, nil
+}
+
+func (c *ratingController) invalidateListCache(ctx context.Context) {
+	if c.cache == nil {
+		return
+	}
+	if err := c.cache.InvalidateLists(ctx); err != nil {
+		log.Printf("field cache: list invalidation failed after rating mutation: %v", err)
+	}
 }

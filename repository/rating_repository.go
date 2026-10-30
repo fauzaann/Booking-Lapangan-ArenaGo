@@ -15,12 +15,18 @@ type RatingSummary struct {
 	Total   int64
 }
 
+type FieldRatingSummary struct {
+	FieldID uint
+	RatingSummary
+}
+
 type RatingRepository interface {
 	Create(ctx context.Context, rating *models.Rating) error
 	FindByID(ctx context.Context, id uint) (*models.Rating, error)
 	FindByBookingID(ctx context.Context, bookingID uint) (*models.Rating, error)
 	ListPublicByFieldID(ctx context.Context, fieldID uint, params ListParams) ([]models.Rating, int64, error)
 	SummaryByFieldID(ctx context.Context, fieldID uint) (RatingSummary, error)
+	SummariesByFieldIDs(ctx context.Context, fieldIDs []uint) (map[uint]RatingSummary, error)
 	ListAdmin(ctx context.Context, visible *bool, params ListParams) ([]models.Rating, int64, error)
 	SetVisibility(ctx context.Context, id uint, visible bool) error
 }
@@ -87,6 +93,27 @@ func (r *ratingRepository) SummaryByFieldID(ctx context.Context, fieldID uint) (
 		return RatingSummary{}, translate(err, "rating not found")
 	}
 	return summary, nil
+}
+
+func (r *ratingRepository) SummariesByFieldIDs(ctx context.Context, fieldIDs []uint) (map[uint]RatingSummary, error) {
+	summaries := make(map[uint]RatingSummary, len(fieldIDs))
+	if len(fieldIDs) == 0 {
+		return summaries, nil
+	}
+
+	var rows []FieldRatingSummary
+	err := r.db.WithContext(ctx).Model(&models.Rating{}).
+		Select("field_id, AVG(rating) AS average, COUNT(*) AS total").
+		Where("field_id IN ? AND is_visible = ?", fieldIDs, true).
+		Group("field_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, translate(err, "rating not found")
+	}
+	for _, row := range rows {
+		summaries[row.FieldID] = row.RatingSummary
+	}
+	return summaries, nil
 }
 
 func (r *ratingRepository) ListAdmin(ctx context.Context, visible *bool, params ListParams) ([]models.Rating, int64, error) {
