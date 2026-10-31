@@ -20,6 +20,7 @@ import Register from "./pages/Register";
 import TransactionList from "./pages/TransactionList";
 import TransactionDetail from "./pages/TransactionDetail";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminAnalytics from "./pages/AdminAnalytics";
 import AdminCheckIn from "./pages/AdminCheckIn";
 import AdminAuditLog from "./pages/AdminAuditLog";
 import AdminRatings from "./pages/AdminRatings";
@@ -113,6 +114,14 @@ export default function App() {
               element={
                 <RequireAuth role="admin">
                   <AdminDashboard />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/analitik"
+              element={
+                <RequireAuth role="admin">
+                  <AdminAnalytics />
                 </RequireAuth>
               }
             />

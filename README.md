@@ -85,6 +85,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 **Admin**
 
 - Dashboard statistik (user, lapangan, booking per status, revenue)
+- Analitik pendapatan tahunan per venue/lokasi, lapangan, dan bulan; slot jam terlaris dapat diekspor ke PDF
 - CRUD lapangan padel + pengaturan harga, status, fasilitas, dan `image_url`
 - Mengatur jam operasional per hari
 - Melihat seluruh booking, mengubah status booking
@@ -317,6 +318,7 @@ Spesifikasi mentah: `http://localhost:8080/docs/openapi.yaml` (file: `docs/opena
 | PATCH | `/api/v1/notifications/read-all` | User |
 | POST | `/api/v1/payments/webhook` | Xendit (x-callback-token) |
 | GET | `/api/v1/admin/dashboard` | Admin |
+| GET | `/api/v1/admin/analytics/revenue?year=2026` | Admin |
 | GET | `/api/v1/admin/users` | Admin |
 | GET/POST | `/api/v1/admin/fields` | Admin |
 | PUT/DELETE | `/api/v1/admin/fields/:id` | Admin |
@@ -367,6 +369,8 @@ Error validasi (422):
 Status code yang dipakai: `200`, `201`, `400`, `401`, `403`, `404`, `409`, `422`, `500`, `502`.
 
 Check-in menerima `booking_code` dan `check_in_token` dari QR e-tiket. Endpoint hanya menerima admin, memverifikasi pembayaran dan status booking di dalam transaksi, lalu menolak pemindaian ulang tiket yang sudah digunakan.
+
+Analitik pendapatan hanya menghitung pembayaran `PAID` berdasarkan waktu pembayaran (`paid_at`, atau `updated_at` untuk data lama tanpa waktu pembayaran). `year` bersifat opsional dan default ke tahun berjalan. Venue dikelompokkan menggunakan `fields.location` karena belum ada entitas venue terpisah; slot terlaris dihitung dari item booking per jam. Halaman admin `/admin/analitik` menyediakan ekspor laporan PDF.
 
 ## Authentication
 

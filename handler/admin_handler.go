@@ -5,6 +5,7 @@ import (
 
 	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/dto"
+	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/response"
 	"Booking-Lapangan/pkg/validator"
 )
@@ -28,6 +29,27 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 		return
 	}
 	response.OK(c, "Dashboard retrieved", result)
+}
+
+// RevenueAnalytics menangani GET /api/v1/admin/analytics/revenue.
+func (h *AdminHandler) RevenueAnalytics(c *gin.Context) {
+	var query struct {
+		Year int `form:"year"`
+	}
+	if !h.bindQuery(c, &query) {
+		return
+	}
+	if query.Year < 0 {
+		response.Error(c, apperror.BadRequest("year must be a positive number"))
+		return
+	}
+
+	result, err := h.admin.RevenueAnalytics(c.Request.Context(), query.Year)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, "Revenue analytics retrieved", result)
 }
 
 // AuditLogs menangani GET /api/v1/admin/audit-logs.

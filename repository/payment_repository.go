@@ -15,6 +15,33 @@ type PaymentFilter struct {
 	Status string
 }
 
+type RevenueAnalytics struct {
+	ByLocation []RevenueGroup
+	ByField    []RevenueGroup
+	ByMonth    []MonthlyRevenue
+	BySlot     []BestSellingSlot
+}
+
+type RevenueGroup struct {
+	ID       uint    `json:"id"`
+	Name     string  `json:"name"`
+	Location string  `json:"location,omitempty"`
+	Bookings int64   `json:"bookings"`
+	Revenue  float64 `json:"revenue"`
+}
+
+type MonthlyRevenue struct {
+	Month    int     `json:"month"`
+	Bookings int64   `json:"bookings"`
+	Revenue  float64 `json:"revenue"`
+}
+
+type BestSellingSlot struct {
+	StartTime string  `json:"start_time"`
+	Bookings  int64   `json:"bookings"`
+	Revenue   float64 `json:"revenue"`
+}
+
 // PaymentRepository adalah kontrak akses data pembayaran.
 type PaymentRepository interface {
 	Create(ctx context.Context, payment *models.Payment) error
@@ -25,6 +52,7 @@ type PaymentRepository interface {
 	FindByCheckoutID(ctx context.Context, checkoutID uint) ([]models.Payment, error)
 	FindAll(ctx context.Context, filter PaymentFilter) ([]models.Payment, int64, error)
 	SumPaidAmount(ctx context.Context) (float64, error)
+	RevenueAnalytics(ctx context.Context, from, to time.Time) (*RevenueAnalytics, error)
 	ExpireOverdue(ctx context.Context, now time.Time) ([]uint, error)
 }
 
@@ -125,6 +153,65 @@ func (r *paymentRepository) SumPaidAmount(ctx context.Context) (float64, error) 
 		return 0, translate(err, "payment not found")
 	}
 	return total, nil
+}
+
+func (r *paymentRepository) RevenueAnalytics(ctx context.Context, from, to time.Time) (*RevenueAnalytics, error) {
+	db := r.db.WithContext(ctx)
+	paidInPeriod := func(query *gorm.DB) *gorm.DB {
+		return query.
+			Joins("JOIN bookings ON bookings.id = payments.booking_id").
+			Where("payments.status = ?", models.PaymentStatusPaid).
+			Where("COALESCE(payments.paid_at, payments.updated_at) >= ? AND COALESCE(payments.paid_at, payments.updated_at) < ?", from, to)
+	}
+
+	result := &RevenueAnalytics{}
+	if err := paidInPeriod(db.Table("payments")).
+		Joins("JOIN fields ON fields.id = bookings.field_id").
+		Select("fields.location AS name, COUNT(*) AS bookings, COALESCE(SUM(payments.amount), 0) AS revenue").
+		Group("fields.location").
+		Order("revenue DESC, fields.location ASC").
+		Scan(&result.ByLocation).Error; err != nil {
+		return nil, translate(err, "payment not found")
+	}
+
+	if err := paidInPeriod(db.Table("payments")).
+		Joins("JOIN fields ON fields.id = bookings.field_id").
+		Select("fields.id AS id, fields.name AS name, fields.location AS location, COUNT(*) AS bookings, COALESCE(SUM(payments.amount), 0) AS revenue").
+		Group("fields.id, fields.name, fields.location").
+		Order("revenue DESC, fields.name ASC").
+		Scan(&result.ByField).Error; err != nil {
+		return nil, translate(err, "payment not found")
+	}
+
+	var monthly []MonthlyRevenue
+	if err := paidInPeriod(db.Table("payments")).
+		Select("EXTRACT(MONTH FROM COALESCE(payments.paid_at, payments.updated_at))::int AS month, COUNT(*) AS bookings, COALESCE(SUM(payments.amount), 0) AS revenue").
+		Group("month").
+		Order("month ASC").
+		Scan(&monthly).Error; err != nil {
+		return nil, translate(err, "payment not found")
+	}
+	result.ByMonth = make([]MonthlyRevenue, 12)
+	for month := range result.ByMonth {
+		result.ByMonth[month].Month = month + 1
+	}
+	for _, row := range monthly {
+		if row.Month >= 1 && row.Month <= len(result.ByMonth) {
+			result.ByMonth[row.Month-1] = row
+		}
+	}
+
+	if err := paidInPeriod(db.Table("payments")).
+		Joins("JOIN booking_items ON booking_items.booking_id = bookings.id").
+		Select("booking_items.start_time AS start_time, COUNT(*) AS bookings, COALESCE(SUM(booking_items.price), 0) AS revenue").
+		Group("booking_items.start_time").
+		Order("bookings DESC, booking_items.start_time ASC").
+		Limit(5).
+		Scan(&result.BySlot).Error; err != nil {
+		return nil, translate(err, "payment not found")
+	}
+
+	return result, nil
 }
 
 // ExpireOverdue menandai pembayaran PENDING yang sudah melewati expired_at

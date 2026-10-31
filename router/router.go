@@ -131,6 +131,7 @@ func New(deps Dependencies) *gin.Engine {
 	admin := v1.Group("/admin", authenticated, adminOnly)
 	{
 		admin.GET("/dashboard", deps.Admin.Dashboard)
+		admin.GET("/analytics/revenue", deps.Admin.RevenueAnalytics)
 		admin.GET("/audit-logs", deps.Admin.AuditLogs)
 		admin.GET("/users", deps.User.List)
 

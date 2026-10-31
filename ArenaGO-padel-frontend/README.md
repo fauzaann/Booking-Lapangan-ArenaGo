@@ -38,6 +38,7 @@ src/
     TransactionList     /admin/transaksi       riwayat transaksi semua user (admin)
     TransactionDetail   /admin/transaksi/:id   detail + log webhook (admin)
     AdminDashboard      /admin       kelola jadwal/slot (admin)
+    AdminAnalytics      /admin/analitik laporan pendapatan tahunan + ekspor PDF (admin)
     AdminCheckIn        /admin/check-in scan QR e-tiket pengguna (admin)
   lib/
     mockData.js  fallback/demo data dan konfigurasi UI

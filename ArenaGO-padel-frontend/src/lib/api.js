@@ -77,6 +77,7 @@ export const api = {
   syncPayment: (id) => request(`/bookings/${id}/sync-payment`, { method: "POST" }),
   bookings: (params = {}) => request(`/bookings?${new URLSearchParams(params)}`),
   adminDashboard: () => request("/admin/dashboard"),
+  adminRevenueAnalytics: (year) => request(`/admin/analytics/revenue?year=${encodeURIComponent(year)}`),
   adminAuditLogs: (params = {}) => request(`/admin/audit-logs?${new URLSearchParams({ page: "1", limit: "25", ...params })}`),
   adminBookings: (params = {}) => request(`/admin/bookings?${new URLSearchParams({ page: "1", limit: "8", ...params })}`),
   adminBooking: (id) => request(`/admin/bookings/${id}`),

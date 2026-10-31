@@ -82,6 +82,9 @@ func (r *testPaymentRepo) FindAll(ctx context.Context, filter repository.Payment
 	return nil, 0, nil
 }
 func (r *testPaymentRepo) SumPaidAmount(ctx context.Context) (float64, error) { return 0, nil }
+func (r *testPaymentRepo) RevenueAnalytics(ctx context.Context, from, to time.Time) (*repository.RevenueAnalytics, error) {
+	return &repository.RevenueAnalytics{}, nil
+}
 func (r *testPaymentRepo) ExpireOverdue(ctx context.Context, now time.Time) ([]uint, error) {
 	return nil, nil
 }
