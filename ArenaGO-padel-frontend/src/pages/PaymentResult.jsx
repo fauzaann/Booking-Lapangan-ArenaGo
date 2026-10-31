@@ -135,6 +135,12 @@ export default function PaymentResult() {
                   <span className="text-ink-faint">Lapangan</span>
                   <span className="font-medium">{item.field_name || `Lapangan #${item.field_id}`}</span>
                 </div>
+                {paid && (
+                  <Link to={`/e-tiket/${item.id}`} className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-sage hover:underline">
+                    <Icon name="confirmation_number" size={17} />
+                    Lihat e-tiket
+                  </Link>
+                )}
               </div>
             ))}
             <div className="flex justify-between gap-4 border-t border-border pt-3">
@@ -164,6 +170,12 @@ export default function PaymentResult() {
               <span className="text-ink-faint">Status</span>
               <StatusBadge status={paid ? "confirmed" : "pending"} label={paid ? "Terkonfirmasi" : "Menunggu pembayaran"} />
             </div>
+            {paid && (
+              <Link to={`/e-tiket/${booking.id}`} className="inline-flex items-center gap-1 text-sm font-medium text-sage hover:underline">
+                <Icon name="confirmation_number" size={17} />
+                Lihat e-tiket
+              </Link>
+            )}
           </div>
         )}
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">

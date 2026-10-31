@@ -52,7 +52,12 @@ func (r *mutationBookingRepo) find(id uint) (*models.Booking, error) {
 	}
 	return cloneMutationBooking(booking), nil
 }
-func (r *mutationBookingRepo) FindByCode(context.Context, string) (*models.Booking, error) {
+func (r *mutationBookingRepo) FindByCode(_ context.Context, code string) (*models.Booking, error) {
+	for _, booking := range r.bookings {
+		if booking.BookingCode == code {
+			return cloneMutationBooking(booking), nil
+		}
+	}
 	return nil, apperror.NotFound("booking not found")
 }
 func (r *mutationBookingRepo) FindByCheckoutID(context.Context, uint) ([]models.Booking, error) {
@@ -319,6 +324,14 @@ func TestBookingCancelRejectsUnchangeableBookings(t *testing.T) {
 	if _, err := controller.Cancel(context.Background(), controllers.Actor{UserID: 7}, started.ID); err == nil {
 		t.Fatal("expected already-started booking cancellation to fail")
 	}
+
+	checkedIn := mutationBooking(16, 7, models.BookingStatusConfirmed, futureBookingDate(2), "10:00", "12:00")
+	now = time.Now()
+	checkedIn.CheckedInAt = &now
+	controller, _ = newMutationController(checkedIn)
+	if _, err := controller.Cancel(context.Background(), controllers.Actor{UserID: 7}, checkedIn.ID); !apperror.IsConflict(err) {
+		t.Fatalf("expected checked-in booking cancellation to fail with conflict, got %v", err)
+	}
 }
 
 func TestBookingRescheduleAvailableSlot(t *testing.T) {
@@ -465,5 +478,44 @@ func TestConcurrentReschedulesCannotTakeSameSlot(t *testing.T) {
 	}
 	if uow.bookingRepo.bookings[first.ID].StartTime == uow.bookingRepo.bookings[second.ID].StartTime {
 		t.Fatal("both bookings acquired the same slot")
+	}
+}
+
+func TestBookingCheckInRequiresAdminAndPaidUnusedTicket(t *testing.T) {
+	token := "secure-ticket-token"
+	booking := mutationBooking(13, 7, models.BookingStatusConfirmed, futureBookingDate(2), "10:00", "12:00")
+	booking.CheckInToken = &token
+	booking.Payment = &models.Payment{BookingID: booking.ID, Status: models.PaymentStatusPaid}
+	controller, uow := newMutationController(booking)
+
+	_, err := controller.CheckIn(context.Background(), controllers.Actor{UserID: 8, Role: models.RoleUser}, dto.CheckInRequest{
+		BookingCode: booking.BookingCode, CheckInToken: token,
+	})
+	if err == nil {
+		t.Fatal("expected a non-admin check-in to be rejected")
+	}
+	if uow.bookingRepo.bookings[booking.ID].CheckedInAt != nil {
+		t.Fatal("non-admin check-in changed booking state")
+	}
+
+	got, err := controller.CheckIn(context.Background(), controllers.Actor{UserID: 99, Role: models.RoleAdmin}, dto.CheckInRequest{
+		BookingCode: booking.BookingCode, CheckInToken: token,
+	})
+	if err != nil {
+		t.Fatalf("CheckIn() error = %v", err)
+	}
+	if got.CheckedInAt == nil || got.CheckInToken != "" {
+		t.Fatalf("unexpected check-in response: %+v", got)
+	}
+	stored := uow.bookingRepo.bookings[booking.ID]
+	if stored.CheckedInAt == nil || stored.CheckedInBy == nil || *stored.CheckedInBy != 99 {
+		t.Fatalf("check-in details were not saved: %+v", stored)
+	}
+
+	_, err = controller.CheckIn(context.Background(), controllers.Actor{UserID: 99, Role: models.RoleAdmin}, dto.CheckInRequest{
+		BookingCode: booking.BookingCode, CheckInToken: token,
+	})
+	if !apperror.IsConflict(err) {
+		t.Fatalf("second check-in error = %v, want conflict", err)
 	}
 }

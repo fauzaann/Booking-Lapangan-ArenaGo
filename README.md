@@ -76,6 +76,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - Menyimpan beberapa booking/lapangan dalam keranjang dan membayar semuanya dengan satu invoice; slot baru divalidasi dan dikunci saat checkout
 - Mendapatkan `payment_url` (invoice Xendit) dan memantau status pembayaran
 - Melihat riwayat & detail booking miliknya sendiri
+- Mendapat e-tiket dengan QR unik setelah pembayaran terkonfirmasi
 - Membatalkan booking sesuai aturan
 - Memberi satu rating 1–5 dan ulasan opsional untuk setiap booking berstatus `COMPLETED`
 - Melihat rata-rata rating dan ulasan publik lapangan; identitas penulis disamarkan
@@ -87,6 +88,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - CRUD lapangan padel + pengaturan harga, status, fasilitas, dan `image_url`
 - Mengatur jam operasional per hari
 - Melihat seluruh booking, mengubah status booking
+- Memindai QR e-tiket pengguna untuk mencatat check-in satu kali
 - Melihat seluruh pembayaran dan data user
 - Memoderasi ulasan dengan menyembunyikan atau menampilkan kembali ulasan
 - Monitoring log pengingat jadwal bermain (`reminder_jobs` MongoDB)
@@ -115,6 +117,7 @@ UI otomatis memakai gradient fallback.
 - Availability check anti-overlap + advisory lock (anti double booking)
 - Database transaction untuk booking + payment
 - Webhook idempotent dengan verifikasi ulang ke Xendit
+- QR check-in memakai token acak, hanya diterbitkan untuk booking terbayar dan dikonfirmasi
 - Worker background: booking kedaluwarsa → `EXPIRED`, booking selesai → `COMPLETED`
 - Response JSON konsisten, centralized error handling, request logging
 
@@ -200,7 +203,7 @@ booking-field/
 | `users` | id, name, email (unique), password (bcrypt), phone, role, timestamps |
 | `fields` | id, name, description, type, location, price_per_hour, facilities, status, deleted_at |
 | `schedules` | id, field_id, day, open_time, close_time, is_closed — unique (field_id, day) |
-| `bookings` | id, booking_code (unique), user_id, field_id, booking_date, start_time, end_time, duration, total_price, status, notes, cancelled_at |
+| `bookings` | id, booking_code (unique), user_id, field_id, booking_date, start_time, end_time, duration, total_price, status, notes, cancelled_at, check_in_token (unique), checked_in_at, checked_in_by |
 | `ratings` | id, booking_id (unique), user_id, field_id, rating (1–5), review (maks. 1.000 karakter), is_visible |
 | `booking_items` | id, booking_id, start_time, end_time, price (rincian per jam) |
 | `payments` | id, booking_id (unique), external_id (unique), invoice_id, invoice_url, amount, payment_method, payment_channel, status, paid_at, expired_at |
@@ -320,6 +323,7 @@ Spesifikasi mentah: `http://localhost:8080/docs/openapi.yaml` (file: `docs/opena
 | PUT | `/api/v1/admin/fields/:id/schedules` | Admin |
 | GET | `/api/v1/admin/bookings` | Admin |
 | PATCH | `/api/v1/admin/bookings/:id/status` | Admin |
+| POST | `/api/v1/admin/check-in` | Admin |
 | GET | `/api/v1/admin/payments` | Admin |
 | GET | `/api/v1/admin/ratings?is_visible=true` | Admin |
 | PATCH | `/api/v1/admin/ratings/:id/moderation` | Admin |
@@ -361,6 +365,8 @@ Error validasi (422):
 ```
 
 Status code yang dipakai: `200`, `201`, `400`, `401`, `403`, `404`, `409`, `422`, `500`, `502`.
+
+Check-in menerima `booking_code` dan `check_in_token` dari QR e-tiket. Endpoint hanya menerima admin, memverifikasi pembayaran dan status booking di dalam transaksi, lalu menolak pemindaian ulang tiket yang sudah digunakan.
 
 ## Authentication
 

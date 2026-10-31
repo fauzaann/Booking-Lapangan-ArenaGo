@@ -138,6 +138,11 @@ func (r *testBookingRepo) FindByID(ctx context.Context, id uint) (*models.Bookin
 	if r.booking != nil && r.booking.ID == id {
 		return r.booking, nil
 	}
+	for i := range r.bookings {
+		if r.bookings[i].ID == id {
+			return &r.bookings[i], nil
+		}
+	}
 	return nil, apperror.NotFound("booking not found")
 }
 func (r *testBookingRepo) FindDetailByID(ctx context.Context, id uint) (*models.Booking, error) {
@@ -237,6 +242,31 @@ func TestPaymentController_HandleWebhook_InvalidToken(t *testing.T) {
 	}
 }
 
+func TestPaymentController_HandleWebhook_IssuesCheckInToken(t *testing.T) {
+	booking := &models.Booking{ID: 10, Status: models.BookingStatusWaitingPayment}
+	payment := &models.Payment{
+		ID: 20, BookingID: booking.ID, ExternalID: "booking-10",
+		Amount: 150000, Status: models.PaymentStatusPending,
+	}
+	paymentRepo := &testPaymentRepo{payment: payment}
+	bookingRepo := &testBookingRepo{booking: booking}
+	uow := &paymentMockUOW{paymentRepo: paymentRepo, bookingRepo: bookingRepo}
+	controller := controllers.NewPaymentController(uow, nil, "valid-token")
+
+	err := controller.HandleWebhook(context.Background(), "valid-token", xendit.WebhookPayload{
+		ExternalID: "booking-10", Status: xendit.StatusPaid, Amount: 150000, PaidAmount: 150000,
+	})
+	if err != nil {
+		t.Fatalf("HandleWebhook() error = %v", err)
+	}
+	if bookingRepo.updatedWith == nil || bookingRepo.updatedWith.Status != models.BookingStatusConfirmed {
+		t.Fatal("paid webhook did not confirm the booking")
+	}
+	if bookingRepo.updatedWith.CheckInToken == nil || len(*bookingRepo.updatedWith.CheckInToken) < 32 {
+		t.Fatal("paid webhook did not issue a secure check-in token")
+	}
+}
+
 func TestPaymentController_SyncPaymentStatus_Success(t *testing.T) {
 	b := &models.Booking{
 		ID:     10,
@@ -281,6 +311,9 @@ func TestPaymentController_SyncPaymentStatus_Success(t *testing.T) {
 
 	if bookingRepo.updatedWith == nil || bookingRepo.updatedWith.Status != models.BookingStatusConfirmed {
 		t.Errorf("expected booking to be updated to CONFIRMED")
+	}
+	if bookingRepo.updatedWith.CheckInToken == nil || len(*bookingRepo.updatedWith.CheckInToken) < 32 {
+		t.Error("expected a secure check-in token to be issued after payment")
 	}
 }
 
@@ -366,6 +399,9 @@ func TestPaymentController_HandleWebhook_ConfirmsWholeCheckout(t *testing.T) {
 	for _, booking := range bookingRepo.bookings {
 		if booking.Status != models.BookingStatusConfirmed {
 			t.Errorf("booking %d status = %s, want CONFIRMED", booking.ID, booking.Status)
+		}
+		if booking.CheckInToken == nil || len(*booking.CheckInToken) < 32 {
+			t.Errorf("booking %d has no secure check-in token", booking.ID)
 		}
 	}
 

@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log"
@@ -36,6 +37,7 @@ type BookingController interface {
 	CancelWithReason(ctx context.Context, actor Actor, id uint, reason string) (*dto.BookingResponse, error)
 	Reschedule(ctx context.Context, actor Actor, id uint, req dto.RescheduleBookingRequest) (*dto.BookingResponse, error)
 	UpdateStatus(ctx context.Context, id uint, status models.BookingStatus) (*dto.BookingResponse, error)
+	CheckIn(ctx context.Context, actor Actor, req dto.CheckInRequest) (*dto.BookingResponse, error)
 	SetNotificationController(nc NotificationController)
 }
 
@@ -518,6 +520,9 @@ func (c *bookingController) Reschedule(ctx context.Context, actor Actor, id uint
 }
 
 func validateBookingCanChange(booking *models.Booking) error {
+	if booking.CheckedInAt != nil {
+		return apperror.Conflict("booking has already been checked in")
+	}
 	switch booking.Status {
 	case models.BookingStatusCancelled:
 		return apperror.Conflict("booking is already cancelled")
@@ -607,6 +612,54 @@ func (c *bookingController) UpdateStatus(ctx context.Context, id uint, status mo
 	}
 
 	return c.Detail(ctx, Actor{Role: models.RoleAdmin}, id)
+}
+
+// CheckIn validates a paid ticket and records a single admin check-in atomically.
+func (c *bookingController) CheckIn(ctx context.Context, actor Actor, req dto.CheckInRequest) (*dto.BookingResponse, error) {
+	if !actor.IsAdmin() {
+		return nil, apperror.Forbidden("admin role is required")
+	}
+
+	var booking *models.Booking
+	err := c.uow.Atomic(ctx, func(r repository.Registry) error {
+		found, err := r.Booking().FindByCode(ctx, strings.TrimSpace(req.BookingCode))
+		if err != nil {
+			return err
+		}
+		locked, err := r.Booking().FindDetailByIDForUpdate(ctx, found.ID)
+		if err != nil {
+			return err
+		}
+		if locked.CheckInToken == nil ||
+			subtle.ConstantTimeCompare([]byte(*locked.CheckInToken), []byte(strings.TrimSpace(req.CheckInToken))) != 1 {
+			return apperror.NotFound("valid ticket not found")
+		}
+		if locked.Status != models.BookingStatusConfirmed ||
+			locked.Payment == nil ||
+			locked.Payment.Status != models.PaymentStatusPaid {
+			return apperror.Conflict("ticket is not eligible for check-in")
+		}
+		if locked.CheckedInAt != nil {
+			return apperror.Conflict("ticket has already been checked in")
+		}
+
+		now := timeNow()
+		locked.CheckedInAt = &now
+		checkedInBy := actor.UserID
+		locked.CheckedInBy = &checkedInBy
+		if err := r.Booking().Update(ctx, locked); err != nil {
+			return err
+		}
+		booking = locked
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	response := dto.NewBookingResponse(*booking)
+	response.CheckInToken = ""
+	return &response, nil
 }
 
 // rollbackBooking membatalkan booking ketika pembuatan invoice gagal, sehingga

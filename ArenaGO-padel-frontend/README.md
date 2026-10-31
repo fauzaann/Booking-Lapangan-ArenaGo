@@ -38,6 +38,7 @@ src/
     TransactionList     /admin/transaksi       riwayat transaksi semua user (admin)
     TransactionDetail   /admin/transaksi/:id   detail + log webhook (admin)
     AdminDashboard      /admin       kelola jadwal/slot (admin)
+    AdminCheckIn        /admin/check-in scan QR e-tiket pengguna (admin)
   lib/
     mockData.js  fallback/demo data dan konfigurasi UI
     api.js       client backend API dan adapter response
@@ -67,4 +68,3 @@ didefinisikan sebagai Tailwind v4 `@theme` di `src/index.css`.
 - Date & time-slot selection
 - Payment flow melalui invoice Xendit
 - Floating concierge terhubung ke endpoint OpenRouter backend
-

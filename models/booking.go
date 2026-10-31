@@ -65,6 +65,9 @@ type Booking struct {
 	CancellationReason   string                  `gorm:"type:text" json:"cancellation_reason,omitempty"`
 	RefundReviewRequired bool                    `gorm:"not null;default:false" json:"refund_review_required"`
 	RescheduleHistory    []BookingScheduleChange `gorm:"type:jsonb;serializer:json" json:"-"`
+	CheckInToken         *string                 `gorm:"type:varchar(64);uniqueIndex" json:"-"`
+	CheckedInAt          *time.Time              `json:"checked_in_at,omitempty"`
+	CheckedInBy          *uint                   `json:"-"`
 	CreatedAt            time.Time               `json:"created_at"`
 	UpdatedAt            time.Time               `json:"updated_at"`
 

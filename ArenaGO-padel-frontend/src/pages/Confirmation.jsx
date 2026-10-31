@@ -125,7 +125,7 @@ export default function Confirmation() {
               <Icon name="info" className="mt-0.5 shrink-0 text-champagne" />
               <p className="text-sm text-ink-muted">
                 E-tiket akan dikirim ke email dan WhatsApp Anda setelah pembayaran
-                berhasil. Tunjukkan QR pada e-tiket ke staf lapangan saat check-in.
+                berhasil. E-tiket QR tersedia setelah pembayaran dikonfirmasi dan dapat ditunjukkan kepada admin saat check-in.
               </p>
             </div>
           </Card>

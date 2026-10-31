@@ -193,7 +193,7 @@ export default function BookingDetail() {
           ) : null}
 
           {(booking.status === "CONFIRMED" || booking.status === "PAID") ? (
-            <Link to="/e-tiket" state={{ booking: toETicketBooking(booking, user) }} className="mt-4 block">
+            <Link to={`/e-tiket/${booking.id}`} state={{ booking: toETicketBooking(booking, user) }} className="mt-4 block">
               <Button variant="secondary" className="w-full">Lihat E-Tiket</Button>
             </Link>
           ) : null}

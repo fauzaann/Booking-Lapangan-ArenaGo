@@ -158,3 +158,18 @@ func (h *BookingHandler) UpdateStatus(c *gin.Context) {
 	}
 	response.OK(c, "Booking status updated", booking)
 }
+
+// CheckIn handles POST /api/v1/admin/check-in.
+func (h *BookingHandler) CheckIn(c *gin.Context) {
+	var req dto.CheckInRequest
+	if !h.bindJSON(c, &req) {
+		return
+	}
+
+	booking, err := h.bookings.CheckIn(c.Request.Context(), middleware.MustActor(c), req)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, "Booking checked in", booking)
+}

@@ -144,6 +144,7 @@ func New(deps Dependencies) *gin.Engine {
 		admin.GET("/bookings", deps.Booking.List)
 		admin.GET("/bookings/:id", deps.Booking.Detail)
 		admin.PATCH("/bookings/:id/status", deps.Booking.UpdateStatus)
+		admin.POST("/check-in", deps.Booking.CheckIn)
 
 		admin.GET("/payments", deps.Payment.List)
 		admin.GET("/ratings", deps.Rating.AdminList)

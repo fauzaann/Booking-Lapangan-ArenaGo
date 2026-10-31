@@ -56,6 +56,11 @@ type UpdateBookingStatusRequest struct {
 	Status string `json:"status" validate:"required,oneof=PENDING WAITING_PAYMENT PAID CONFIRMED CANCELLED COMPLETED EXPIRED"`
 }
 
+type CheckInRequest struct {
+	BookingCode  string `json:"booking_code" validate:"required,max=30"`
+	CheckInToken string `json:"check_in_token" validate:"required,max=64"`
+}
+
 // BookingItemResponse adalah rincian slot per jam.
 type BookingItemResponse struct {
 	StartTime string  `json:"start_time"`
@@ -80,6 +85,8 @@ type BookingResponse struct {
 	CancellationReason   string                         `json:"cancellation_reason,omitempty"`
 	RefundReviewRequired bool                           `json:"refund_review_required"`
 	RescheduleHistory    []models.BookingScheduleChange `json:"reschedule_history,omitempty"`
+	CheckInToken         string                         `json:"check_in_token,omitempty"`
+	CheckedInAt          *time.Time                     `json:"checked_in_at,omitempty"`
 	Items                []BookingItemResponse          `json:"items,omitempty"`
 	Payment              *PaymentResponse               `json:"payment,omitempty"`
 	CreatedAt            time.Time                      `json:"created_at"`
@@ -158,6 +165,12 @@ func NewBookingResponse(booking models.Booking) BookingResponse {
 	if booking.Payment != nil {
 		payment := NewPaymentResponse(*booking.Payment)
 		response.Payment = &payment
+		if booking.Status == models.BookingStatusConfirmed &&
+			booking.Payment.Status == models.PaymentStatusPaid &&
+			booking.CheckInToken != nil {
+			response.CheckInToken = *booking.CheckInToken
+			response.CheckedInAt = booking.CheckedInAt
+		}
 	}
 	return response
 }

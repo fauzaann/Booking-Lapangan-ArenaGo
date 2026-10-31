@@ -80,6 +80,7 @@ export const api = {
   adminAuditLogs: (params = {}) => request(`/admin/audit-logs?${new URLSearchParams({ page: "1", limit: "25", ...params })}`),
   adminBookings: (params = {}) => request(`/admin/bookings?${new URLSearchParams({ page: "1", limit: "8", ...params })}`),
   adminBooking: (id) => request(`/admin/bookings/${id}`),
+  adminCheckIn: (payload) => request("/admin/check-in", { method: "POST", body: JSON.stringify(payload) }),
   adminFields: () => request("/admin/fields?page=1&limit=50"),
   adminPayments: (params = {}) => request(`/admin/payments?${new URLSearchParams({ page: "1", limit: "50", ...params })}`),
   adminRatings: (params = {}) => request(`/admin/ratings?${new URLSearchParams({ page: "1", limit: "20", ...params })}`),

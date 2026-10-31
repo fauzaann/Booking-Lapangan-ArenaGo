@@ -20,6 +20,7 @@ import Register from "./pages/Register";
 import TransactionList from "./pages/TransactionList";
 import TransactionDetail from "./pages/TransactionDetail";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminCheckIn from "./pages/AdminCheckIn";
 import AdminAuditLog from "./pages/AdminAuditLog";
 import AdminRatings from "./pages/AdminRatings";
 
@@ -74,7 +75,7 @@ export default function App() {
               element={<RequireAuth><PaymentResult /></RequireAuth>}
             />
             <Route
-              path="/e-tiket"
+              path="/e-tiket/:id"
               element={
                 <RequireAuth>
                   <ETicket />
@@ -112,6 +113,14 @@ export default function App() {
               element={
                 <RequireAuth role="admin">
                   <AdminDashboard />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/check-in"
+              element={
+                <RequireAuth role="admin">
+                  <AdminCheckIn />
                 </RequireAuth>
               }
             />

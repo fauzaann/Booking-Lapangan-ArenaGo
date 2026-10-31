@@ -2,7 +2,9 @@ package controllers
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
 	"log"
 	"math"
 	"strings"
@@ -92,7 +94,7 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 			return nil
 		}
 
-		booking, err := r.Booking().FindByID(ctx, payment.BookingID)
+		booking, err := r.Booking().FindDetailByIDForUpdate(ctx, payment.BookingID)
 		if err != nil {
 			return err
 		}
@@ -107,7 +109,6 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 			if paid+1 < payment.Amount || math.IsNaN(paid) {
 				return apperror.BadRequest("paid amount does not match invoice amount")
 			}
-
 			paidAt := verified.PaidAt
 			if paidAt == nil {
 				now := timeNow()
@@ -118,6 +119,13 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 			payment.PaymentMethod = verified.PaymentMethod
 			payment.PaymentChannel = verified.PaymentChannel
 			booking.Status = models.BookingStatusConfirmed
+			if booking.CheckInToken == nil {
+				checkInToken, err := newCheckInToken()
+				if err != nil {
+					return err
+				}
+				booking.CheckInToken = &checkInToken
+			}
 			confirmedBookingIDs = append(confirmedBookingIDs, booking.ID)
 
 		case xendit.StatusExpired:
@@ -195,11 +203,22 @@ func applyCheckoutWebhook(
 			}
 		}
 		for i := range bookings {
-			bookings[i].Status = models.BookingStatusConfirmed
-			if err := r.Booking().Update(ctx, &bookings[i]); err != nil {
+			booking, err := r.Booking().FindDetailByIDForUpdate(ctx, bookings[i].ID)
+			if err != nil {
 				return err
 			}
-			*confirmedBookingIDs = append(*confirmedBookingIDs, bookings[i].ID)
+			booking.Status = models.BookingStatusConfirmed
+			if booking.CheckInToken == nil {
+				checkInToken, err := newCheckInToken()
+				if err != nil {
+					return err
+				}
+				booking.CheckInToken = &checkInToken
+			}
+			if err := r.Booking().Update(ctx, booking); err != nil {
+				return err
+			}
+			*confirmedBookingIDs = append(*confirmedBookingIDs, booking.ID)
 		}
 	case xendit.StatusExpired:
 		checkout.Status = models.PaymentStatusExpired
@@ -219,6 +238,14 @@ func applyCheckoutWebhook(
 		}
 	}
 	return r.Checkout().Update(ctx, checkout)
+}
+
+func newCheckInToken() (string, error) {
+	randomBytes := make([]byte, 32)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", apperror.Internal("failed to generate check-in token", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(randomBytes), nil
 }
 
 func (c *paymentController) scheduleConfirmedBookings(bookingIDs []uint) {
@@ -421,6 +448,10 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 	switch strings.ToUpper(strings.TrimSpace(invoice.Status)) {
 	case xendit.StatusPaid, xendit.StatusSettled:
 		err = c.uow.Atomic(ctx, func(r repository.Registry) error {
+			currentBooking, err := r.Booking().FindDetailByIDForUpdate(ctx, bookingID)
+			if err != nil {
+				return err
+			}
 			now := timeNow()
 			paidAt := invoice.PaidAt
 			if paidAt == nil {
@@ -438,9 +469,16 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 				return err
 			}
 
-			booking.Status = models.BookingStatusConfirmed
-			confirmedBookingID = booking.ID
-			return r.Booking().Update(ctx, booking)
+			currentBooking.Status = models.BookingStatusConfirmed
+			if currentBooking.CheckInToken == nil {
+				checkInToken, err := newCheckInToken()
+				if err != nil {
+					return err
+				}
+				currentBooking.CheckInToken = &checkInToken
+			}
+			confirmedBookingID = currentBooking.ID
+			return r.Booking().Update(ctx, currentBooking)
 		})
 		if err != nil {
 			return nil, err
