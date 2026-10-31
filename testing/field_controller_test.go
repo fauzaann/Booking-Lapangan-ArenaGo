@@ -19,6 +19,7 @@ type mockFieldRepo struct {
 	deleteErr       error
 	findAllCalls    int
 	findDetailCalls int
+	fields          []models.Field
 }
 
 func (m *mockFieldRepo) Create(ctx context.Context, field *models.Field) error { return nil }
@@ -33,7 +34,7 @@ func (m *mockFieldRepo) FindDetailByID(ctx context.Context, id uint) (*models.Fi
 }
 func (m *mockFieldRepo) FindAll(ctx context.Context, filter repository.FieldFilter) ([]models.Field, int64, error) {
 	m.findAllCalls++
-	return nil, 0, nil
+	return m.fields, int64(len(m.fields)), nil
 }
 func (m *mockFieldRepo) Count(ctx context.Context) (int64, error) { return 1, nil }
 
@@ -160,6 +161,35 @@ func TestFieldListCacheKeyIncludesFilters(t *testing.T) {
 	}
 	if firstKey == cache.listKey {
 		t.Fatalf("cache key %q was reused for different filters", firstKey)
+	}
+}
+
+func TestFieldListIncludesRatingSummaries(t *testing.T) {
+	fieldRepo := &mockFieldRepo{fields: []models.Field{
+		{ID: 7, Name: "Lapangan Alpha"},
+		{ID: 8, Name: "Lapangan Beta"},
+	}}
+	ratings := newRatingTestRepository()
+	ratings.items[1] = models.Rating{ID: 1, BookingID: 101, FieldID: 7, Rating: 5, IsVisible: true}
+	ratings.items[2] = models.Rating{ID: 2, BookingID: 102, FieldID: 7, Rating: 3, IsVisible: true}
+	ratings.items[3] = models.Rating{ID: 3, BookingID: 103, FieldID: 7, Rating: 1, IsVisible: false}
+	uow := &fieldTestUOW{
+		mockUOW:   mockUOW{ratingRepo: ratings},
+		fieldRepo: fieldRepo,
+	}
+
+	fields, total, err := controllers.NewFieldController(uow).List(context.Background(), dto.FieldFilterQuery{})
+	if err != nil {
+		t.Fatalf("list fields: %v", err)
+	}
+	if total != 2 || len(fields) != 2 {
+		t.Fatalf("field list = %d, total %d; want 2", len(fields), total)
+	}
+	if fields[0].AverageRating != 4 || fields[0].TotalReviews != 2 {
+		t.Fatalf("first field rating summary = (%v, %d), want (4, 2)", fields[0].AverageRating, fields[0].TotalReviews)
+	}
+	if fields[1].AverageRating != 0 || fields[1].TotalReviews != 0 {
+		t.Fatalf("field without reviews summary = (%v, %d), want (0, 0)", fields[1].AverageRating, fields[1].TotalReviews)
 	}
 }
 

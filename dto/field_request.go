@@ -68,16 +68,18 @@ type ScheduleResponse struct {
 
 // FieldResponse adalah representasi lapangan untuk client.
 type FieldResponse struct {
-	ID           uint               `json:"id"`
-	Name         string             `json:"name"`
-	Description  string             `json:"description"`
-	Type         string             `json:"type"`
-	Location     string             `json:"location"`
-	PricePerHour float64            `json:"price_per_hour"`
-	ImageURL     string             `json:"image_url,omitempty"`
-	Facilities   []string           `json:"facilities"`
-	Status       string             `json:"status"`
-	Schedules    []ScheduleResponse `json:"schedules,omitempty"`
+	ID            uint               `json:"id"`
+	Name          string             `json:"name"`
+	Description   string             `json:"description"`
+	Type          string             `json:"type"`
+	Location      string             `json:"location"`
+	PricePerHour  float64            `json:"price_per_hour"`
+	ImageURL      string             `json:"image_url,omitempty"`
+	Facilities    []string           `json:"facilities"`
+	Status        string             `json:"status"`
+	AverageRating float64            `json:"average_rating"`
+	TotalReviews  int64              `json:"total_reviews"`
+	Schedules     []ScheduleResponse `json:"schedules,omitempty"`
 }
 
 // SlotResponse adalah satu slot per jam pada endpoint availability.

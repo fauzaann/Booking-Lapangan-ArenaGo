@@ -374,6 +374,8 @@ Otorisasi role dijaga middleware `RequireRole(models.RoleAdmin)` pada seluruh gr
 
 Rating hanya dapat dibuat oleh pemilik booking yang sudah `COMPLETED`; satu booking hanya dapat dinilai sekali. `user_id` dan `field_id` selalu diambil dari data booking di server. Ulasan publik yang disembunyikan admin tidak dihitung dalam ringkasan rating. Pengguna tidak dapat mengedit atau menghapus rating pada MVP.
 
+Daftar lapangan publik menyertakan `average_rating` dan `total_reviews` agar rating dapat langsung ditampilkan pada kartu lapangan di halaman beranda. Lapangan yang belum memiliki ulasan mengembalikan nilai `0` untuk keduanya.
+
 ## Alur Booking
 
 ```

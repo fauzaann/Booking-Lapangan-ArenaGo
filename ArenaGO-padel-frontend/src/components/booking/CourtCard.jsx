@@ -22,12 +22,10 @@ export default function CourtCard({ court }) {
             VIP
           </span>
         )}
-        {typeof court.rating === "number" && (
-          <div className="absolute left-4 top-4 flex items-center gap-1 rounded-full bg-canvas/90 px-2.5 py-1 text-xs font-semibold">
-            <Icon name="star" size={14} filled className="text-champagne" />
-            {court.rating.toFixed(1)}{court.reviews > 0 ? ` · ${court.reviews}` : ""}
-          </div>
-        )}
+        <div className="absolute left-4 top-4 flex items-center gap-1 rounded-full bg-canvas/90 px-2.5 py-1 text-xs font-semibold">
+          <Icon name="star" size={14} filled={typeof court.rating === "number"} className={typeof court.rating === "number" ? "text-champagne" : "text-ink-faint"} />
+          {typeof court.rating === "number" ? `${court.rating.toFixed(1)} · ${court.reviews} ulasan` : "Belum ada ulasan"}
+        </div>
       </div>
 
       <div className="p-6">

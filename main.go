@@ -135,8 +135,9 @@ func main() {
 	notifHandler = handler.NewNotificationHandler(notifController, validate)
 
 	authController := controllers.NewAuthController(uow.User(), tokens)
-	fieldController := controllers.NewFieldController(uow, fieldcache.New(redisClient, cfg.Redis.CacheTTL))
-	ratingController := controllers.NewRatingController(uow)
+	fieldCache := fieldcache.New(redisClient, cfg.Redis.CacheTTL)
+	fieldController := controllers.NewFieldController(uow, fieldCache)
+	ratingController := controllers.NewRatingController(uow, fieldCache)
 	bookingController := controllers.NewBookingController(uow, invoices, controllers.BookingPolicy{
 		MinHours:           cfg.Booking.MinHours,
 		MaxHours:           cfg.Booking.MaxHours,

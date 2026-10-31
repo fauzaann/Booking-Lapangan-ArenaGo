@@ -86,6 +86,21 @@ func (c *fieldController) List(ctx context.Context, query dto.FieldFilterQuery) 
 		return nil, 0, err
 	}
 	responses := dto.NewFieldResponses(fields)
+	if len(fields) > 0 {
+		fieldIDs := make([]uint, 0, len(fields))
+		for _, field := range fields {
+			fieldIDs = append(fieldIDs, field.ID)
+		}
+		summaries, err := c.uow.Rating().SummariesByFieldIDs(ctx, fieldIDs)
+		if err != nil {
+			return nil, 0, err
+		}
+		for i := range responses {
+			summary := summaries[responses[i].ID]
+			responses[i].AverageRating = summary.Average
+			responses[i].TotalReviews = summary.Total
+		}
+	}
 	if c.cache != nil && cacheReadSucceeded {
 		if err := c.cache.SetList(ctx, cacheKey, cacheVersion, fieldcache.ListData{
 			Fields: responses,
@@ -377,7 +392,7 @@ func fieldListCacheKey(filter repository.FieldFilter) (string, error) {
 		return "", apperror.Internal("failed to create field cache key", err)
 	}
 	hash := sha256.Sum256(encoded)
-	return hex.EncodeToString(hash[:]), nil
+	return "field-list:v2:" + hex.EncodeToString(hash[:]), nil
 }
 
 // buildSchedules memvalidasi request jadwal dan mengubahnya menjadi model.

@@ -10,6 +10,7 @@ import (
 	"Booking-Lapangan/dto"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
+	"Booking-Lapangan/pkg/fieldcache"
 	"Booking-Lapangan/repository"
 )
 
@@ -79,6 +80,20 @@ func (r *ratingTestRepository) SummaryByFieldID(_ context.Context, fieldID uint)
 	return summary, nil
 }
 
+func (r *ratingTestRepository) SummariesByFieldIDs(_ context.Context, fieldIDs []uint) (map[uint]repository.RatingSummary, error) {
+	summaries := make(map[uint]repository.RatingSummary, len(fieldIDs))
+	for _, fieldID := range fieldIDs {
+		summary, err := r.SummaryByFieldID(context.Background(), fieldID)
+		if err != nil {
+			return nil, err
+		}
+		if summary.Total > 0 {
+			summaries[fieldID] = summary
+		}
+	}
+	return summaries, nil
+}
+
 func (r *ratingTestRepository) ListAdmin(_ context.Context, visible *bool, params repository.ListParams) ([]models.Rating, int64, error) {
 	var ratings []models.Rating
 	for _, rating := range r.items {
@@ -100,18 +115,19 @@ func (r *ratingTestRepository) SetVisibility(_ context.Context, id uint, visible
 	return nil
 }
 
-func newRatingTestController(booking *models.Booking, ratings *ratingTestRepository) controllers.RatingController {
+func newRatingTestController(booking *models.Booking, ratings *ratingTestRepository, caches ...fieldcache.Store) controllers.RatingController {
 	return controllers.NewRatingController(&mockUOW{
 		bookingRepo: &mockBookingRepo{booking: booking},
 		fieldRepo:   &mockFieldRepo{field: &models.Field{ID: 7, Type: models.FieldTypePadel}},
 		ratingRepo:  ratings,
-	})
+	}, caches...)
 }
 
 func TestRatingCreateRequiresCompletedOwnedBooking(t *testing.T) {
 	booking := &models.Booking{ID: 25, UserID: 4, FieldID: 7, Status: models.BookingStatusCompleted}
 	ratings := newRatingTestRepository()
-	controller := newRatingTestController(booking, ratings)
+	cache := &mockFieldCache{}
+	controller := newRatingTestController(booking, ratings, cache)
 
 	result, err := controller.Create(context.Background(), controllers.Actor{UserID: 4}, 25, dto.CreateRatingRequest{
 		Rating: 5, Review: "  Lapangan bersih.  ",
@@ -124,6 +140,9 @@ func TestRatingCreateRequiresCompletedOwnedBooking(t *testing.T) {
 	}
 	if result.Author != "Pelanggan terverifikasi" {
 		t.Fatalf("rating author = %q, want masked label", result.Author)
+	}
+	if cache.listInvalidate != 1 {
+		t.Fatalf("rating list cache invalidations = %d, want 1", cache.listInvalidate)
 	}
 
 	if _, err := controller.Create(context.Background(), controllers.Actor{UserID: 4}, 25, dto.CreateRatingRequest{Rating: 4}); err == nil || !apperror.IsConflict(err) {
