@@ -76,6 +76,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - Menyimpan beberapa booking/lapangan dalam keranjang dan membayar semuanya dengan satu invoice; slot baru divalidasi dan dikunci saat checkout
 - Mendapatkan `payment_url` (invoice Xendit) dan memantau status pembayaran
 - Melihat riwayat & detail booking miliknya sendiri
+- Bertanya kepada AI Assistant tentang slot kosong; hasil ketersediaan aktual ditampilkan sebagai kartu lapangan yang membuka jadwal booking
 - Mendapat e-tiket dengan QR unik setelah pembayaran terkonfirmasi
 - Membatalkan booking sesuai aturan
 - Memberi satu rating 1–5 dan ulasan opsional untuk setiap booking berstatus `COMPLETED`

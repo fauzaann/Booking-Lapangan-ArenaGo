@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams, Link } from "react-router-dom";
 import Icon from "../components/ui/Icon";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
@@ -12,6 +12,14 @@ import { useCart } from "../context/CartContext";
 
 export default function SelectSlot() {
   const { courtId } = useParams();
+  const location = useLocation();
+  const suggestion = location.state?.availabilitySuggestion;
+  const pageKey = `${courtId}-${suggestion?.date || ""}-${(suggestion?.slots || []).join(",")}`;
+
+  return <SelectSlotPage key={pageKey} courtId={courtId} suggestion={suggestion} />;
+}
+
+function SelectSlotPage({ courtId, suggestion }) {
   const navigate = useNavigate();
   const { addItem } = useCart();
   const [court, setCourt] = useState(null);
@@ -21,9 +29,23 @@ export default function SelectSlot() {
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [cartMessage, setCartMessage] = useState("");
 
-  const days = useMemo(() => getUpcomingDays(7), []);
-  const [dayIndex, setDayIndex] = useState(0);
+  const days = useMemo(() => {
+    const upcoming = getUpcomingDays(7);
+    const suggestedDate = parseDateOnly(suggestion?.date);
+    if (!suggestedDate || suggestedDate < upcoming[0]) return upcoming;
+    if (upcoming.some((day) => formatDateInput(day) === suggestion.date)) return upcoming;
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(suggestedDate);
+      date.setDate(date.getDate() + index);
+      return date;
+    });
+  }, [suggestion?.date]);
+  const [dayIndex, setDayIndex] = useState(() => {
+    const suggestedIndex = days.findIndex((day) => formatDateInput(day) === suggestion?.date);
+    return suggestedIndex >= 0 ? suggestedIndex : 0;
+  });
   const [selected, setSelected] = useState([]);
+  const suggestionApplied = useRef(false);
   const selectedDate = days[dayIndex] || days[0];
   const dateValue = formatDateInput(selectedDate);
 
@@ -40,6 +62,13 @@ export default function SelectSlot() {
     api.availability(courtId, dateValue)
       .then((res) => {
         setAvailability(res.data);
+        if (!suggestionApplied.current && suggestion?.date === dateValue) {
+          const availableTimes = new Set(
+            res.data.slots.filter((slot) => slot.available).map((slot) => slot.start_time),
+          );
+          setSelected((suggestion.slots || []).filter((time) => availableTimes.has(time)));
+          suggestionApplied.current = true;
+        }
       })
       .catch((err) => {
         setAvailability(null);
@@ -48,7 +77,7 @@ export default function SelectSlot() {
       .finally(() => {
         setLoadingAvailability(false);
       });
-  }, [courtId, dateValue]);
+  }, [courtId, dateValue, suggestion]);
 
   const slots = useMemo(
     () => (availability?.slots || []).map((slot) => ({
@@ -62,6 +91,15 @@ export default function SelectSlot() {
 
   function toggleSlot(time) {
     setSelected((prev) => toggleContiguousSlot(slots, prev, time));
+  }
+
+  function parseDateOnly(value) {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const [year, month, day] = value.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+    date.setHours(0, 0, 0, 0);
+    return date;
   }
 
   const total = selected.length * (court?.pricePerHour || 0);
