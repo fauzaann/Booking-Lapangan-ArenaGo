@@ -6,12 +6,14 @@ import (
 	"time"
 
 	"Booking-Lapangan/controllers"
+	"Booking-Lapangan/dto"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/repository"
 )
 
 type analyticsMockUOW struct {
 	payments *analyticsPaymentRepo
+	auditLog repository.AuditLogRepository
 }
 
 func (u *analyticsMockUOW) User() repository.UserRepository         { return nil }
@@ -21,7 +23,7 @@ func (u *analyticsMockUOW) Booking() repository.BookingRepository   { return nil
 func (u *analyticsMockUOW) Rating() repository.RatingRepository     { return nil }
 func (u *analyticsMockUOW) Payment() repository.PaymentRepository   { return u.payments }
 func (u *analyticsMockUOW) Checkout() repository.CheckoutRepository { return nil }
-func (u *analyticsMockUOW) AuditLog() repository.AuditLogRepository { return nil }
+func (u *analyticsMockUOW) AuditLog() repository.AuditLogRepository { return u.auditLog }
 func (u *analyticsMockUOW) Atomic(_ context.Context, fn func(repository.Registry) error) error {
 	return fn(u)
 }
@@ -107,5 +109,62 @@ func TestAdminRevenueAnalyticsRejectsInvalidYear(t *testing.T) {
 	}
 	if payments.calls != 0 {
 		t.Fatalf("invalid years should not query analytics, got %d calls", payments.calls)
+	}
+}
+
+type auditLogFilterRepo struct {
+	filter repository.AuditLogFilter
+}
+
+func (*auditLogFilterRepo) Create(context.Context, *models.AuditLog) error { return nil }
+func (r *auditLogFilterRepo) FindAll(_ context.Context, filter repository.AuditLogFilter) ([]models.AuditLog, int64, error) {
+	r.filter = filter
+	return nil, 0, nil
+}
+
+func TestAdminListAuditLogsAppliesFilters(t *testing.T) {
+	auditLogs := &auditLogFilterRepo{}
+	admin := controllers.NewAdminController(&analyticsMockUOW{auditLog: auditLogs})
+	from := time.Date(2026, time.March, 4, 0, 0, 0, 0, time.Local)
+	toExclusive := time.Date(2026, time.March, 7, 0, 0, 0, 0, time.Local)
+
+	_, _, err := admin.ListAuditLogs(context.Background(), dto.AuditLogFilterQuery{
+		PaginationQuery: dto.PaginationQuery{Page: 2, Limit: 25},
+		ActorEmail:      " user@example.com ",
+		Path:            " payments ",
+		Method:          " post ",
+		StatusCode:      200,
+		From:            "2026-03-04",
+		To:              "2026-03-06",
+	})
+	if err != nil {
+		t.Fatalf("ListAuditLogs returned error: %v", err)
+	}
+
+	filter := auditLogs.filter
+	if filter.Page != 2 || filter.Limit != 25 || filter.ActorEmail != "user@example.com" ||
+		filter.Path != "payments" || filter.Method != "POST" || filter.StatusCode != 200 {
+		t.Fatalf("unexpected audit log filters: %+v", filter)
+	}
+	if filter.From == nil || !filter.From.Equal(from) || filter.To == nil || !filter.To.Equal(toExclusive) {
+		t.Fatalf("expected inclusive date range %v to %v, got %v to %v", from, toExclusive, filter.From, filter.To)
+	}
+}
+
+func TestAdminListAuditLogsRejectsInvalidFilters(t *testing.T) {
+	auditLogs := &auditLogFilterRepo{}
+	admin := controllers.NewAdminController(&analyticsMockUOW{auditLog: auditLogs})
+
+	for _, query := range []dto.AuditLogFilterQuery{
+		{StatusCode: 99},
+		{From: "04-03-2026"},
+		{From: "2026-03-07", To: "2026-03-06"},
+	} {
+		if _, _, err := admin.ListAuditLogs(context.Background(), query); err == nil {
+			t.Errorf("ListAuditLogs(%+v) expected validation error", query)
+		}
+	}
+	if auditLogs.filter.Limit != 0 {
+		t.Fatal("invalid audit filters must not query the repository")
 	}
 }

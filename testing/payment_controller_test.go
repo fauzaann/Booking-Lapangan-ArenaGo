@@ -198,7 +198,7 @@ func (r *testBookingRepo) CompleteFinished(ctx context.Context, now time.Time) (
 type testAuditRepo struct{}
 
 func (r *testAuditRepo) Create(ctx context.Context, log *models.AuditLog) error { return nil }
-func (r *testAuditRepo) FindAll(ctx context.Context, params repository.ListParams) ([]models.AuditLog, int64, error) {
+func (r *testAuditRepo) FindAll(ctx context.Context, filter repository.AuditLogFilter) ([]models.AuditLog, int64, error) {
 	return nil, 0, nil
 }
 

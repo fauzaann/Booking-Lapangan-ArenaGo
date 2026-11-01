@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"Booking-Lapangan/dto"
@@ -15,7 +16,7 @@ type AdminController interface {
 	Dashboard(ctx context.Context) (*dto.DashboardResponse, error)
 	RevenueAnalytics(ctx context.Context, year int) (*dto.RevenueAnalyticsResponse, error)
 	ListUsers(ctx context.Context, query dto.PaginationQuery) ([]dto.UserResponse, int64, error)
-	ListAuditLogs(ctx context.Context, query dto.PaginationQuery) ([]dto.AuditLogResponse, int64, error)
+	ListAuditLogs(ctx context.Context, query dto.AuditLogFilterQuery) ([]dto.AuditLogResponse, int64, error)
 }
 
 type adminController struct {
@@ -135,9 +136,41 @@ func (c *adminController) ListUsers(ctx context.Context, query dto.PaginationQue
 }
 
 // ListAuditLogs mengambil aktivitas request terbaru untuk panel admin.
-func (c *adminController) ListAuditLogs(ctx context.Context, query dto.PaginationQuery) ([]dto.AuditLogResponse, int64, error) {
-	query = query.Normalize()
-	logs, total, err := c.uow.AuditLog().FindAll(ctx, repository.ListParams{Page: query.Page, Limit: query.Limit})
+func (c *adminController) ListAuditLogs(ctx context.Context, query dto.AuditLogFilterQuery) ([]dto.AuditLogResponse, int64, error) {
+	query.PaginationQuery = query.PaginationQuery.Normalize()
+	if query.StatusCode != 0 && (query.StatusCode < 100 || query.StatusCode > 599) {
+		return nil, 0, apperror.BadRequest("status_code must be between 100 and 599")
+	}
+
+	var from, to *time.Time
+	if value := strings.TrimSpace(query.From); value != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", value, time.Local)
+		if err != nil {
+			return nil, 0, apperror.BadRequest("from must use YYYY-MM-DD format")
+		}
+		from = &parsed
+	}
+	if value := strings.TrimSpace(query.To); value != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", value, time.Local)
+		if err != nil {
+			return nil, 0, apperror.BadRequest("to must use YYYY-MM-DD format")
+		}
+		parsed = parsed.AddDate(0, 0, 1)
+		to = &parsed
+	}
+	if from != nil && to != nil && !from.Before(*to) {
+		return nil, 0, apperror.BadRequest("from must be on or before to")
+	}
+
+	logs, total, err := c.uow.AuditLog().FindAll(ctx, repository.AuditLogFilter{
+		ListParams: repository.ListParams{Page: query.Page, Limit: query.Limit},
+		ActorEmail: strings.TrimSpace(query.ActorEmail),
+		Path:       strings.TrimSpace(query.Path),
+		Method:     strings.ToUpper(strings.TrimSpace(query.Method)),
+		StatusCode: query.StatusCode,
+		From:       from,
+		To:         to,
+	})
 	if err != nil {
 		return nil, 0, err
 	}

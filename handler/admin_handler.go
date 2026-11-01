@@ -54,11 +54,11 @@ func (h *AdminHandler) RevenueAnalytics(c *gin.Context) {
 
 // AuditLogs menangani GET /api/v1/admin/audit-logs.
 func (h *AdminHandler) AuditLogs(c *gin.Context) {
-	var query dto.PaginationQuery
+	var query dto.AuditLogFilterQuery
 	if !h.bindQuery(c, &query) {
 		return
 	}
-	query = query.Normalize()
+	query.PaginationQuery = query.PaginationQuery.Normalize()
 
 	logs, total, err := h.admin.ListAuditLogs(c.Request.Context(), query)
 	if err != nil {

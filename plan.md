@@ -144,4 +144,62 @@ schedule with the requested date and any matching hours preselected.
 - `go test ./...`: passed.
 - Browser/API: a request for 15 November 2026, 19:00–21:00 showed five live matching courts; tapping one opened its schedule with the date and both slots selected.
 - Browser: a missing-date question asked for clarification; replying "15 November 2026" then showed available courts and correctly listed all available times without interpreting the day number as an hour.
+
+---
+
+# Audit log coverage
+
+## Current behavior
+
+The global audit middleware records every HTTP request handled by the API,
+not only successful business changes. This includes public and authenticated
+requests, administrator requests, failed requests, health checks, and
+unmatched routes. Each entry stores:
+
+- Authenticated actor ID, email, and role when authentication populated the
+  request context; requests without an actor are still recorded.
+- HTTP method and URL path (without query parameters or request body).
+- Response status code and request duration in milliseconds.
+- Client IP address, user-agent, and creation timestamp.
+
+## Activities represented
+
+- Authentication: registration and login attempts.
+- Public browsing: field lists/details, schedules, availability, and field
+  ratings.
+- User account: profile reads.
+- Booking: create/list/detail, payment and review reads, cancellation,
+  rescheduling, check-in-related routes where applicable.
+- Checkout and payment: checkout create/detail/payment synchronization and
+  payment webhook requests.
+- Ratings: submission and public listing.
+- Assistant: chat requests.
+- Notifications: listing, unread count, and read/mark-all-read actions.
+- Admin: dashboard and revenue analytics, user lists, field and schedule
+  management, booking/status management, check-in, payments, rating
+  moderation, reminders, and audit-log reads.
+
+The log records which HTTP endpoint was called and its outcome; it does not
+currently describe the business event in detail. For example, an admin field
+update is recorded as `PUT /api/v1/admin/fields/:id`, but the changed fields
+and before/after values are not stored. Query parameters and request bodies
+are also omitted, so failed login attempts can be seen as requests but their
+submitted email or password is not logged.
+
+## Follow-up plan
+
+- [x] Add server-side audit-log filters for user email, request path, HTTP
+  method, exact response status, and inclusive date range; expose them on the
+  admin activity page with pagination preserved.
+- Keep request-level logging for operational visibility and failed-request
+  investigation.
+- If audit history needs to answer exactly what changed, add explicit
+  business-event records for sensitive mutations (for example booking
+  cancellation/status changes, field and schedule edits, payment state
+  changes, and rating moderation), recording safe entity identifiers and
+  before/after values where appropriate.
+- Do not store passwords, authorization tokens, payment secrets, or raw
+  request bodies in audit records.
+- Validate the audit-log page against successful, failed, and unauthenticated
+  requests, and verify actor attribution on authenticated actions.
 - `git diff --check`: passed.

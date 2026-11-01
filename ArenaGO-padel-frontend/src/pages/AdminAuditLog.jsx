@@ -22,19 +22,52 @@ export default function AdminAuditLog() {
   const [logs, setLogs] = useState([]);
   const [meta, setMeta] = useState(null);
   const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState({});
+  const [filterDraft, setFilterDraft] = useState({
+    actor_email: "",
+    method: "",
+    path: "",
+    status_code: "",
+    from: "",
+    to: "",
+  });
+  const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const hasFilters = Object.keys(filters).length > 0;
 
   useEffect(() => {
     setLoading(true);
-    api.adminAuditLogs({ page, limit: 25 })
+    setError("");
+    api.adminAuditLogs({ page, limit: 25, ...filters })
       .then((result) => {
         setLogs(result.data);
         setMeta(result.meta);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [page]);
+  }, [page, filters, refreshKey]);
+
+  function applyFilters(event) {
+    event.preventDefault();
+    setPage(1);
+    setFilters(Object.fromEntries(
+      Object.entries(filterDraft).filter(([, value]) => value !== ""),
+    ));
+  }
+
+  function clearFilters() {
+    setFilterDraft({
+      actor_email: "",
+      method: "",
+      path: "",
+      status_code: "",
+      from: "",
+      to: "",
+    });
+    setFilters({});
+    setPage(1);
+  }
 
   return (
     <div className="px-5 py-8 sm:px-8 lg:px-16">
@@ -44,19 +77,98 @@ export default function AdminAuditLog() {
           <h1 className="font-display text-3xl sm:text-4xl">Aktivitas sistem</h1>
           <p className="mt-2 text-ink-muted">Lihat seluruh request, aksi pengguna, dan aktivitas administrator.</p>
         </div>
-        <button type="button" onClick={() => setPage(1)} className="inline-flex items-center gap-2 self-start rounded-full border border-border px-4 py-2.5 text-sm font-medium hover:border-ink-muted sm:self-auto">
+        <button type="button" onClick={() => setRefreshKey((key) => key + 1)} className="inline-flex items-center gap-2 self-start rounded-full border border-border px-4 py-2.5 text-sm font-medium hover:border-ink-muted sm:self-auto">
           <Icon name="refresh" size={17} />
           Muat ulang
         </button>
       </div>
+
+      <form onSubmit={applyFilters} className="mb-6 rounded-lg border border-border bg-surface-raised p-4 sm:p-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="text-sm font-medium">
+            Email pengguna
+            <input
+              type="search"
+              value={filterDraft.actor_email}
+              onChange={(event) => setFilterDraft((current) => ({ ...current, actor_email: event.target.value }))}
+              placeholder="Cari email pengguna"
+              className="mt-1.5 h-11 w-full rounded-md border border-border bg-surface px-3 text-sm font-normal focus:border-onyx focus:outline-none focus:ring-4 focus:ring-onyx/5"
+            />
+          </label>
+          <label className="text-sm font-medium">
+            Aktivitas / endpoint
+            <input
+              type="search"
+              value={filterDraft.path}
+              onChange={(event) => setFilterDraft((current) => ({ ...current, path: event.target.value }))}
+              placeholder="Contoh: bookings, payments"
+              className="mt-1.5 h-11 w-full rounded-md border border-border bg-surface px-3 text-sm font-normal focus:border-onyx focus:outline-none focus:ring-4 focus:ring-onyx/5"
+            />
+          </label>
+          <label className="text-sm font-medium">
+            Metode
+            <select
+              value={filterDraft.method}
+              onChange={(event) => setFilterDraft((current) => ({ ...current, method: event.target.value }))}
+              className="mt-1.5 h-11 w-full rounded-md border border-border bg-surface px-3 text-sm font-normal focus:border-onyx focus:outline-none focus:ring-4 focus:ring-onyx/5"
+            >
+              <option value="">Semua metode</option>
+              {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
+                <option key={method} value={method}>{method}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-medium">
+            Kode status HTTP
+            <input
+              type="number"
+              min="100"
+              max="599"
+              value={filterDraft.status_code}
+              onChange={(event) => setFilterDraft((current) => ({ ...current, status_code: event.target.value }))}
+              placeholder="Contoh: 200 atau 500"
+              className="mt-1.5 h-11 w-full rounded-md border border-border bg-surface px-3 text-sm font-normal focus:border-onyx focus:outline-none focus:ring-4 focus:ring-onyx/5"
+            />
+          </label>
+          <label className="text-sm font-medium">
+            Dari tanggal
+            <input
+              type="date"
+              value={filterDraft.from}
+              onChange={(event) => setFilterDraft((current) => ({ ...current, from: event.target.value }))}
+              className="mt-1.5 h-11 w-full rounded-md border border-border bg-surface px-3 text-sm font-normal focus:border-onyx focus:outline-none focus:ring-4 focus:ring-onyx/5"
+            />
+          </label>
+          <label className="text-sm font-medium">
+            Sampai tanggal
+            <input
+              type="date"
+              value={filterDraft.to}
+              onChange={(event) => setFilterDraft((current) => ({ ...current, to: event.target.value }))}
+              className="mt-1.5 h-11 w-full rounded-md border border-border bg-surface px-3 text-sm font-normal focus:border-onyx focus:outline-none focus:ring-4 focus:ring-onyx/5"
+            />
+          </label>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button type="submit" className="rounded-full bg-onyx px-5 py-2.5 text-sm font-semibold text-white hover:bg-ink">
+            Terapkan filter
+          </button>
+          <button type="button" onClick={clearFilters} className="rounded-full border border-border px-5 py-2.5 text-sm font-medium hover:border-ink-muted">
+            Hapus filter
+          </button>
+          {meta ? <span className="text-sm text-ink-muted">{meta.total_items} aktivitas ditemukan</span> : null}
+        </div>
+      </form>
 
       {error ? <p className="rounded-md border border-terracotta/30 bg-terracotta/10 p-4 text-sm text-terracotta">{error}</p> : null}
       {loading ? <p className="py-16 text-center text-sm text-ink-muted">Memuat aktivitas...</p> : null}
       {!loading && !error && logs.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-20 text-center">
           <Icon name="history" size={32} className="mb-3 text-ink-faint" />
-          <p className="mb-1 font-display text-xl">Belum ada aktivitas</p>
-          <p className="text-sm text-ink-muted">Aktivitas baru akan muncul setelah ada request ke sistem.</p>
+          <p className="mb-1 font-display text-xl">{hasFilters ? "Tidak ada aktivitas yang cocok" : "Belum ada aktivitas"}</p>
+          <p className="text-sm text-ink-muted">
+            {hasFilters ? "Coba ubah atau hapus filter pencarian." : "Aktivitas baru akan muncul setelah ada request ke sistem."}
+          </p>
         </div>
       ) : null}
       {!loading && !error && logs.length > 0 ? (

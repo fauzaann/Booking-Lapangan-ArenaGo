@@ -6,6 +6,16 @@ import (
 	"Booking-Lapangan/models"
 )
 
+type AuditLogFilterQuery struct {
+	PaginationQuery
+	ActorEmail string `form:"actor_email"`
+	Path       string `form:"path"`
+	Method     string `form:"method"`
+	StatusCode int    `form:"status_code"`
+	From       string `form:"from"`
+	To         string `form:"to"`
+}
+
 type AuditLogResponse struct {
 	ID         uint        `json:"id"`
 	ActorID    *uint       `json:"actor_id,omitempty"`
