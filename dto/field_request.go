@@ -22,14 +22,15 @@ type CreateFieldRequest struct {
 // UpdateFieldRequest adalah payload perubahan lapangan (admin).
 // Field bertipe pointer agar perubahan parsial dapat dibedakan dari nilai kosong.
 type UpdateFieldRequest struct {
-	Name         *string   `json:"name" validate:"omitempty,min=3,max=120"`
-	Description  *string   `json:"description" validate:"omitempty,max=1000"`
-	Type         *string   `json:"type" validate:"omitempty,oneof=PADEL"`
-	Location     *string   `json:"location" validate:"omitempty,min=3,max=200"`
-	PricePerHour *float64  `json:"price_per_hour" validate:"omitempty,gt=0"`
-	ImageURL     *string   `json:"image_url" validate:"omitempty,url,max=500"`
-	Status       *string   `json:"status" validate:"omitempty,oneof=ACTIVE INACTIVE MAINTENANCE"`
-	Facilities   *[]string `json:"facilities" validate:"omitempty,dive,max=50"`
+	Name         *string            `json:"name" validate:"omitempty,min=3,max=120"`
+	Description  *string            `json:"description" validate:"omitempty,max=1000"`
+	Type         *string            `json:"type" validate:"omitempty,oneof=PADEL"`
+	Location     *string            `json:"location" validate:"omitempty,min=3,max=200"`
+	PricePerHour *float64           `json:"price_per_hour" validate:"omitempty,gt=0"`
+	ImageURL     *string            `json:"image_url" validate:"omitempty,url,max=500"`
+	Status       *string            `json:"status" validate:"omitempty,oneof=ACTIVE INACTIVE MAINTENANCE"`
+	Facilities   *[]string          `json:"facilities" validate:"omitempty,dive,max=50"`
+	Schedules    *[]ScheduleRequest `json:"schedules" validate:"omitempty,min=1,dive"`
 }
 
 // FieldFilterQuery adalah query string pencarian lapangan.

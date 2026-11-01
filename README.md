@@ -15,6 +15,7 @@ Akun admin bawaan:
 - Password: `admin123`
 
 Setelah login, buka `/admin` untuk melihat dashboard operasional. Role admin dari API (`ADMIN`) sudah ditangani secara case-insensitive oleh frontend.
+Buka **Kelola lapangan** atau `/admin/lapangan` untuk menambah dan mengedit deskripsi, URL gambar, harga, fasilitas, status, dan jam operasional mingguan. URL gambar harus dapat diakses publik melalui HTTP/HTTPS.
 
 ## Menjalankan Lokal
 

@@ -1,3 +1,5 @@
+import { getApiErrorMessage, getNetworkErrorMessage } from "./apiError";
+
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "/api/v1").replace(/\/$/, "");
 
 async function request(path, options = {}) {
@@ -9,15 +11,30 @@ async function request(path, options = {}) {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
+  }).catch((networkError) => {
+    throw new Error(getNetworkErrorMessage(networkError), { cause: networkError });
   });
 
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body.success === false) {
-    const message = typeof body.error === "string" ? body.error : body.message;
+  const contentType = response.headers.get("content-type") || "";
+  const responseText = await response.text();
+  let body;
+  let invalidJson = false;
+  if (contentType.includes("json") && responseText) {
+    try {
+      body = JSON.parse(responseText);
+    } catch {
+      invalidJson = true;
+    }
+  }
+  if (response.ok && (!contentType.includes("json") || invalidJson)) {
+    throw new Error(`Backend mengirim respons yang tidak valid (HTTP ${response.status}). Periksa log API.`);
+  }
+  if (!response.ok || body?.success === false) {
+    const message = getApiErrorMessage(response.status, contentType, body);
     if (response.status === 401 && token && message === "invalid or expired token") {
       window.dispatchEvent(new Event("arenago:session-expired"));
     }
-    const error = new Error(message || "Permintaan gagal diproses.");
+    const error = new Error(message);
     error.details = body.error;
     error.status = response.status;
     throw error;
@@ -83,6 +100,9 @@ export const api = {
   adminBooking: (id) => request(`/admin/bookings/${id}`),
   adminCheckIn: (payload) => request("/admin/check-in", { method: "POST", body: JSON.stringify(payload) }),
   adminFields: () => request("/admin/fields?page=1&limit=50"),
+  createField: (payload) => request("/admin/fields", { method: "POST", body: JSON.stringify(payload) }),
+  updateField: (id, payload) => request(`/admin/fields/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  fieldSchedules: (id) => request(`/admin/fields/${id}/schedules`),
   adminPayments: (params = {}) => request(`/admin/payments?${new URLSearchParams({ page: "1", limit: "50", ...params })}`),
   adminRatings: (params = {}) => request(`/admin/ratings?${new URLSearchParams({ page: "1", limit: "20", ...params })}`),
   moderateRating: (id, isVisible) => request(`/admin/ratings/${id}/moderation`, {

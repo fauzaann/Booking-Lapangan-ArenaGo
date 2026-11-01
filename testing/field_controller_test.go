@@ -39,7 +39,9 @@ func (m *mockFieldRepo) FindAll(ctx context.Context, filter repository.FieldFilt
 func (m *mockFieldRepo) Count(ctx context.Context) (int64, error) { return 1, nil }
 
 type mockScheduleRepo struct {
-	schedule *models.Schedule
+	schedule    *models.Schedule
+	upsertErr   error
+	upsertCalls int
 }
 
 func (m *mockScheduleRepo) FindByFieldID(ctx context.Context, fieldID uint) ([]models.Schedule, error) {
@@ -49,7 +51,8 @@ func (m *mockScheduleRepo) FindByFieldAndDay(ctx context.Context, fieldID uint, 
 	return m.schedule, nil
 }
 func (m *mockScheduleRepo) Upsert(ctx context.Context, schedules []models.Schedule) error {
-	return nil
+	m.upsertCalls++
+	return m.upsertErr
 }
 func (m *mockScheduleRepo) DeleteByFieldID(ctx context.Context, fieldID uint) error {
 	return nil
@@ -63,6 +66,9 @@ type fieldTestUOW struct {
 
 func (m *fieldTestUOW) Field() repository.FieldRepository       { return m.fieldRepo }
 func (m *fieldTestUOW) Schedule() repository.ScheduleRepository { return m.scheduleRepo }
+func (m *fieldTestUOW) Atomic(ctx context.Context, fn func(r repository.Registry) error) error {
+	return fn(m)
+}
 
 type mockFieldCache struct {
 	listData            fieldcache.ListData
@@ -224,6 +230,49 @@ func TestFieldUpdateDoesNotInvalidateCacheWhenDatabaseWriteFails(t *testing.T) {
 	}
 	if cache.listInvalidate != 0 || cache.detailInvalidate != 0 {
 		t.Fatalf("cache invalidated after failed database write: list %d, detail %d", cache.listInvalidate, cache.detailInvalidate)
+	}
+}
+
+func TestFieldUpdateSavesSchedulesInSameUnitOfWork(t *testing.T) {
+	field := &models.Field{ID: 7, Name: "Lapangan Alpha", Type: models.FieldTypePadel}
+	scheduleRepo := &mockScheduleRepo{}
+	controller := controllers.NewFieldController(&fieldTestUOW{
+		fieldRepo:    &mockFieldRepo{field: field},
+		scheduleRepo: scheduleRepo,
+	})
+	schedules := []dto.ScheduleRequest{{
+		Day:       "MONDAY",
+		OpenTime:  "08:00",
+		CloseTime: "22:00",
+	}}
+
+	if _, err := controller.Update(context.Background(), field.ID, dto.UpdateFieldRequest{Schedules: &schedules}); err != nil {
+		t.Fatalf("update field schedules: %v", err)
+	}
+	if scheduleRepo.upsertCalls != 1 {
+		t.Fatalf("schedule upsert calls = %d, want 1", scheduleRepo.upsertCalls)
+	}
+}
+
+func TestFieldUpdateDoesNotInvalidateCacheWhenScheduleWriteFails(t *testing.T) {
+	field := &models.Field{ID: 7, Name: "Lapangan Alpha", Type: models.FieldTypePadel}
+	cache := &mockFieldCache{}
+	scheduleRepo := &mockScheduleRepo{upsertErr: errors.New("schedule write failed")}
+	controller := controllers.NewFieldController(&fieldTestUOW{
+		fieldRepo:    &mockFieldRepo{field: field},
+		scheduleRepo: scheduleRepo,
+	}, cache)
+	schedules := []dto.ScheduleRequest{{
+		Day:       "MONDAY",
+		OpenTime:  "08:00",
+		CloseTime: "22:00",
+	}}
+
+	if _, err := controller.Update(context.Background(), field.ID, dto.UpdateFieldRequest{Schedules: &schedules}); err == nil {
+		t.Fatal("update succeeded despite schedule write error")
+	}
+	if cache.listInvalidate != 0 || cache.detailInvalidate != 0 {
+		t.Fatalf("cache invalidated after failed transaction: list %d, detail %d", cache.listInvalidate, cache.detailInvalidate)
 	}
 }
 

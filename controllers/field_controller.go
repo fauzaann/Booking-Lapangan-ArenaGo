@@ -233,7 +233,26 @@ func (c *fieldController) Update(ctx context.Context, id uint, req dto.UpdateFie
 		field.Facilities = dto.EncodeFacilities(*req.Facilities)
 	}
 
-	if err := c.uow.Field().Update(ctx, field); err != nil {
+	var schedules []models.Schedule
+	if req.Schedules != nil {
+		schedules, err = buildSchedules(*req.Schedules)
+		if err != nil {
+			return nil, err
+		}
+		for i := range schedules {
+			schedules[i].FieldID = field.ID
+		}
+	}
+
+	if err := c.uow.Atomic(ctx, func(r repository.Registry) error {
+		if err := r.Field().Update(ctx, field); err != nil {
+			return err
+		}
+		if req.Schedules != nil {
+			return r.Schedule().Upsert(ctx, schedules)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	if !c.invalidateFieldCache(ctx, field.ID) {

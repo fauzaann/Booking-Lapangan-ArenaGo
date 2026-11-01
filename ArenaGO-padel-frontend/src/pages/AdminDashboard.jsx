@@ -76,6 +76,10 @@ export default function AdminDashboard() {
           <p className="mt-2 text-ink-muted">Pantau booking, pendapatan, dan ketersediaan lapangan hari ini.</p>
         </div>
         <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <Link to="/admin/lapangan" className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2.5 text-sm font-medium hover:border-ink-muted">
+            <Icon name="sports_tennis" size={17} />
+            Kelola lapangan
+          </Link>
           <Link to="/admin/analitik" className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2.5 text-sm font-medium hover:border-ink-muted">
             <Icon name="query_stats" size={17} />
             Analitik pendapatan
