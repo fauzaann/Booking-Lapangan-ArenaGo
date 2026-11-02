@@ -134,7 +134,7 @@ func Load() (*Config, error) {
 		},
 		JWT: JWTConfig{
 			Secret:   getEnv("JWT_SECRET", ""),
-			Duration: time.Duration(getEnvInt("JWT_EXPIRE_HOUR", 24)) * time.Hour,
+			Duration: time.Duration(getEnvInt("JWT_EXPIRE_HOUR", 2)) * time.Hour,
 		},
 		Xendit: XenditConfig{
 			SecretKey:          getEnv("XENDIT_SECRET_KEY", ""),
