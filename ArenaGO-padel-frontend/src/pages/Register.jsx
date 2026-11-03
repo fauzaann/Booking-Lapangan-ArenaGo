@@ -8,7 +8,9 @@ export default function Register() {
   const { register, status } = useAuth();
   const navigate = useNavigate();
 
-  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "" });
+  const [form, setForm] = useState({
+    name: "", email: "", phone: "", password: "", whatsapp_opt_in: false,
+  });
   const [errors, setErrors] = useState({});
 
   function update(field, value) {
@@ -77,6 +79,18 @@ export default function Register() {
           onChange={(e) => update("password", e.target.value)}
           error={errors.password}
         />
+        <label className="flex items-start gap-3 text-sm text-ink-muted">
+          <input
+            type="checkbox"
+            checked={form.whatsapp_opt_in}
+            onChange={(event) => update("whatsapp_opt_in", event.target.checked)}
+            className="mt-1 accent-onyx"
+          />
+          <span>
+            Saya setuju menerima pengingat pembayaran, perubahan booking, dan pengumuman venue melalui WhatsApp.
+            Persetujuan dapat dicabut kapan saja di profil.
+          </span>
+        </label>
 
         <Button type="submit" className="w-full" disabled={status === "loading"}>
           {status === "loading" ? "Memproses..." : "Daftar"}

@@ -21,6 +21,7 @@ type Config struct {
 	OpenRouter OpenRouterConfig
 	Booking    BookingConfig
 	Mongo      MongoConfig
+	WhatsApp   WhatsAppConfig
 	Redis      RedisConfig
 }
 
@@ -98,6 +99,21 @@ type MongoConfig struct {
 	ReminderH2     bool
 }
 
+// WhatsAppConfig berisi konfigurasi WhatsApp Cloud API dan template yang disetujui Meta.
+type WhatsAppConfig struct {
+	PhoneNumberID              string
+	AccessToken                string
+	BaseURL                    string
+	Language                   string
+	PaymentReminderDelay       time.Duration
+	PaymentReminderTemplate    string
+	BookingConfirmedTemplate   string
+	BookingCancelledTemplate   string
+	BookingRescheduledTemplate string
+	MatchReminderTemplate      string
+	VenueAnnouncementTemplate  string
+}
+
 // RedisConfig berisi koneksi Redis dan durasi cache lapangan.
 type RedisConfig struct {
 	Address  string
@@ -162,6 +178,19 @@ func Load() (*Config, error) {
 			ReminderH24:    getEnvBool("REMINDER_H24_ENABLED", true),
 			ReminderH2:     getEnvBool("REMINDER_H2_ENABLED", true),
 		},
+		WhatsApp: WhatsAppConfig{
+			PhoneNumberID:              getEnv("WHATSAPP_PHONE_NUMBER_ID", ""),
+			AccessToken:                getEnv("WHATSAPP_ACCESS_TOKEN", ""),
+			BaseURL:                    getEnv("WHATSAPP_GRAPH_API_URL", "https://graph.facebook.com/v22.0"),
+			Language:                   getEnv("WHATSAPP_TEMPLATE_LANGUAGE", "id"),
+			PaymentReminderDelay:       time.Duration(getEnvInt("WHATSAPP_PAYMENT_REMINDER_DELAY_MINUTES", 10)) * time.Minute,
+			PaymentReminderTemplate:    getEnv("WHATSAPP_TEMPLATE_PAYMENT_REMINDER", "payment_reminder"),
+			BookingConfirmedTemplate:   getEnv("WHATSAPP_TEMPLATE_BOOKING_CONFIRMED", "booking_confirmed"),
+			BookingCancelledTemplate:   getEnv("WHATSAPP_TEMPLATE_BOOKING_CANCELLED", "booking_cancelled"),
+			BookingRescheduledTemplate: getEnv("WHATSAPP_TEMPLATE_BOOKING_RESCHEDULED", "booking_rescheduled"),
+			MatchReminderTemplate:      getEnv("WHATSAPP_TEMPLATE_MATCH_REMINDER", "match_reminder"),
+			VenueAnnouncementTemplate:  getEnv("WHATSAPP_TEMPLATE_VENUE_ANNOUNCEMENT", "venue_announcement"),
+		},
 		Redis: RedisConfig{
 			Address:  getEnv("REDIS_ADDR", "localhost:6379"),
 			Password: getEnv("REDIS_PASSWORD", ""),
@@ -202,6 +231,12 @@ func (c *Config) validate() error {
 	}
 	if c.Redis.CacheTTL <= 0 {
 		return fmt.Errorf("FIELD_CACHE_TTL_MINUTES must be greater than 0")
+	}
+	if (c.WhatsApp.PhoneNumberID == "") != (c.WhatsApp.AccessToken == "") {
+		return fmt.Errorf("WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN must be configured together")
+	}
+	if c.WhatsApp.PaymentReminderDelay <= 0 {
+		return fmt.Errorf("WHATSAPP_PAYMENT_REMINDER_DELAY_MINUTES must be greater than 0")
 	}
 
 	if c.Xendit.WebhookToken == "" {

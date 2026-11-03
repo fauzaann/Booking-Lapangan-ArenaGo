@@ -14,6 +14,7 @@ function getNavItems({ isAuthenticated, isAdmin }) {
   if (isAdmin) {
     items.push({ to: "/admin/transaksi", label: "Transaksi", icon: "account_balance_wallet" });
     items.push({ to: "/admin/aktivitas", label: "Aktivitas", icon: "history" });
+    items.push({ to: "/admin/pengumuman", label: "Pengumuman", icon: "campaign" });
     items.push({ to: "/admin", label: "Kelola Jadwal", icon: "calendar_month" });
   }
   return items;

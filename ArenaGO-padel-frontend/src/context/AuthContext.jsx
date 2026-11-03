@@ -59,6 +59,12 @@ export function AuthProvider({ children }) {
     setUser((prev) => (prev ? { ...prev, ...partial } : prev));
   }
 
+  async function updateWhatsAppPreference(whatsapp_opt_in, phone) {
+    const result = await api.updateNotificationPreferences({ whatsapp_opt_in, phone });
+    setUser(result.data);
+    return result.data;
+  }
+
   function logout() {
     clearSession();
     setUser(null);
@@ -73,6 +79,7 @@ export function AuthProvider({ children }) {
     register,
     logout,
     updateProfile,
+    updateWhatsAppPreference,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

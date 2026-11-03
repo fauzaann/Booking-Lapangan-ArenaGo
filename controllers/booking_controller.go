@@ -242,6 +242,12 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 		return nil, err
 	}
 
+	if c.notif != nil {
+		c.notifyAfterCommit(ctx, "payment reminder scheduling", booking.ID, func(ctx context.Context) error {
+			return c.notif.SchedulePaymentReminder(ctx, booking.ID, invoice.InvoiceURL, *expiredAt)
+		})
+	}
+
 	return &dto.BookingCreatedResponse{
 		BookingID:     booking.ID,
 		BookingCode:   booking.BookingCode,
@@ -602,11 +608,15 @@ func (c *bookingController) UpdateStatus(ctx context.Context, id uint, status mo
 	if c.notif != nil {
 		if status == models.BookingStatusConfirmed {
 			go func() {
-				_ = c.notif.ScheduleRemindersForBooking(context.Background(), id)
+				if err := c.notif.ScheduleRemindersForBooking(context.Background(), id); err != nil {
+					log.Printf("booking: failed to schedule reminders for booking %d: %v", id, err)
+				}
 			}()
 		} else if status == models.BookingStatusCancelled {
 			go func() {
-				_ = c.notif.CancelRemindersForBooking(context.Background(), id)
+				if err := c.notif.CancelRemindersForBooking(context.Background(), id); err != nil {
+					log.Printf("booking: failed to send cancellation notifications for booking %d: %v", id, err)
+				}
 			}()
 		}
 	}

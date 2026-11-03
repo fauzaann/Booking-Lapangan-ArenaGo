@@ -83,6 +83,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - Memberi satu rating 1–5 dan ulasan opsional untuk setiap booking berstatus `COMPLETED`
 - Melihat rata-rata rating dan ulasan publik lapangan; identitas penulis disamarkan
 - Kotak masuk notifikasi in-app dan pengingat jadwal bermain (H-24 & H-2 jam sebelum main) berbasis MongoDB
+- Pengingat pembayaran tertunda, konfirmasi/perubahan booking, pengingat jadwal, dan pengumuman venue melalui WhatsApp Cloud API untuk pengguna yang menyetujui notifikasi
 
 **Admin**
 
@@ -94,6 +95,7 @@ Aplikasi ini melayani pemesanan lapangan padel secara online: user memilih lapan
 - Memindai QR e-tiket pengguna untuk mencatat check-in satu kali
 - Melihat seluruh pembayaran dan data user
 - Memoderasi ulasan dengan menyembunyikan atau menampilkan kembali ulasan
+- Mengirim pengumuman venue ke inbox seluruh pengguna dan WhatsApp pengguna yang opt-in
 - Monitoring log pengingat jadwal bermain (`reminder_jobs` MongoDB)
 
 **Sistem**
@@ -235,6 +237,17 @@ XENDIT_WEBHOOK_TOKEN=<callback verification token dari dashboard Xendit>
 
 Redis untuk cache lapangan bersifat opsional. Default koneksi adalah `localhost:6379`; jika Redis belum tersedia, backend tetap berjalan dengan fallback PostgreSQL. Atur `REDIS_ADDR`, `REDIS_PASSWORD`, dan `REDIS_DB` untuk koneksi yang berbeda. `FIELD_CACHE_TTL_MINUTES` mengatur TTL (default 5 menit). Untuk mengaktifkan cache lokal, jalankan Redis di alamat tersebut sebelum backend; periksa log `redis: connected` saat startup.
 
+WhatsApp bersifat opsional dan menggunakan Meta WhatsApp Cloud API. Isi `WHATSAPP_PHONE_NUMBER_ID` dan `WHATSAPP_ACCESS_TOKEN` bersama-sama untuk mengaktifkannya. Siapkan dan setujui template pesan dengan nama yang dikonfigurasi pada `WHATSAPP_TEMPLATE_*`; urutan parameter template adalah:
+
+- `payment_reminder`: nama, kode booking, nama lapangan, nominal, URL pembayaran
+- `booking_confirmed`: nama, kode booking, nama lapangan, tanggal, jam mulai, jam selesai
+- `booking_cancelled`: nama, kode booking, nama lapangan
+- `booking_rescheduled`: nama, kode booking, nama lapangan, tanggal, jam mulai, jam selesai
+- `match_reminder`: nama, nama lapangan, tanggal, jam mulai, jam selesai, tipe pengingat
+- `venue_announcement`: judul, isi pengumuman
+
+Pengguna tidak otomatis menerima WhatsApp: persetujuan dicentang saat pendaftaran atau dapat diubah dari profil. Pengingat pembayaran dijadwalkan 10 menit setelah invoice dibuat (hanya jika masih sebelum kedaluwarsa); ubah jedanya melalui `WHATSAPP_PAYMENT_REMINDER_DELAY_MINUTES`. Notifikasi in-app tetap tersedia terpisah. Pengumuman admin tersedia di `/admin/pengumuman` dan dikirim ke semua inbox; WhatsApp hanya ke pengguna yang opt-in. WhatsApp Cloud API mewajibkan penggunaan template yang telah disetujui Meta untuk pesan bisnis.
+
 ## Instalasi & Menjalankan
 
 ```bash
@@ -299,6 +312,7 @@ Spesifikasi mentah: `http://localhost:8080/docs/openapi.yaml` (file: `docs/opena
 | POST | `/api/v1/auth/register` | Publik |
 | POST | `/api/v1/auth/login` | Publik |
 | GET | `/api/v1/me` | User |
+| PATCH | `/api/v1/me/notification-preferences` | User |
 | GET | `/api/v1/fields` | Publik |
 | GET | `/api/v1/fields/:id` | Publik |
 | GET | `/api/v1/fields/:id/availability?date=` | Publik |
@@ -332,6 +346,7 @@ Spesifikasi mentah: `http://localhost:8080/docs/openapi.yaml` (file: `docs/opena
 | GET | `/api/v1/admin/ratings?is_visible=true` | Admin |
 | PATCH | `/api/v1/admin/ratings/:id/moderation` | Admin |
 | GET | `/api/v1/admin/reminders` | Admin |
+| POST | `/api/v1/admin/announcements` | Admin |
 
 ### Format Response
 

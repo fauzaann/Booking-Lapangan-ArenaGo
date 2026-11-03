@@ -11,6 +11,7 @@ import (
 // UserRepository adalah kontrak akses data user.
 type UserRepository interface {
 	Create(ctx context.Context, user *models.User) error
+	Update(ctx context.Context, user *models.User) error
 	FindByID(ctx context.Context, id uint) (*models.User, error)
 	FindByEmail(ctx context.Context, email string) (*models.User, error)
 	ExistsByEmail(ctx context.Context, email string) (bool, error)
@@ -30,6 +31,10 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 // Create menyimpan user baru ke database.
 func (r *userRepository) Create(ctx context.Context, user *models.User) error {
 	return translate(r.db.WithContext(ctx).Create(user).Error, "user not found")
+}
+
+func (r *userRepository) Update(ctx context.Context, user *models.User) error {
+	return translate(r.db.WithContext(ctx).Save(user).Error, "user not found")
 }
 
 // FindByID mengambil user berdasarkan primary key.

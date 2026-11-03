@@ -120,3 +120,17 @@ func (h *NotificationHandler) AdminListReminders(c *gin.Context) {
 
 	response.Paginated(c, "Reminder jobs retrieved", jobs, response.NewMeta(query.Page, query.Limit, total))
 }
+
+// PublishVenueAnnouncement menangani POST /api/v1/admin/announcements.
+func (h *NotificationHandler) PublishVenueAnnouncement(c *gin.Context) {
+	var req dto.VenueAnnouncementRequest
+	if !h.bindJSON(c, &req) {
+		return
+	}
+	result, err := h.controller.PublishVenueAnnouncement(c.Request.Context(), req.Title, req.Message)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, "Venue announcement published", result)
+}

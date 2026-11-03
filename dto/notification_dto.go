@@ -29,3 +29,8 @@ type ReminderJobFilterQuery struct {
 	PaginationQuery
 	Status string `form:"status"`
 }
+
+type VenueAnnouncementRequest struct {
+	Title   string `json:"title" validate:"required,min=3,max=120"`
+	Message string `json:"message" validate:"required,min=3,max=1024"`
+}

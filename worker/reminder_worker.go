@@ -4,11 +4,21 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
+	"Booking-Lapangan/config"
 	"Booking-Lapangan/models"
+	"Booking-Lapangan/pkg/whatsapp"
 	"Booking-Lapangan/repository"
 )
+
+type ReminderWorkerOptions struct {
+	WhatsAppConfig    config.WhatsAppConfig
+	WhatsAppSender    whatsapp.Sender
+	UserRepository    repository.UserRepository
+	PaymentRepository repository.PaymentRepository
+}
 
 // ReminderWorker bertugas memantau antrean pengingat di MongoDB dan
 // mengirimkan notifikasi saat waktu pengingat telah tiba.
@@ -16,6 +26,10 @@ type ReminderWorker struct {
 	reminderRepo repository.ReminderRepository
 	notifRepo    repository.NotificationRepository
 	interval     time.Duration
+	whatsAppCfg  config.WhatsAppConfig
+	whatsApp     whatsapp.Sender
+	userRepo     repository.UserRepository
+	paymentRepo  repository.PaymentRepository
 }
 
 // NewReminderWorker membuat worker pengingat jadwal baru.
@@ -23,15 +37,23 @@ func NewReminderWorker(
 	reminderRepo repository.ReminderRepository,
 	notifRepo repository.NotificationRepository,
 	interval time.Duration,
+	options ...ReminderWorkerOptions,
 ) *ReminderWorker {
 	if interval <= 0 {
 		interval = time.Minute
 	}
-	return &ReminderWorker{
+	worker := &ReminderWorker{
 		reminderRepo: reminderRepo,
 		notifRepo:    notifRepo,
 		interval:     interval,
 	}
+	if len(options) > 0 {
+		worker.whatsAppCfg = options[0].WhatsAppConfig
+		worker.whatsApp = options[0].WhatsAppSender
+		worker.userRepo = options[0].UserRepository
+		worker.paymentRepo = options[0].PaymentRepository
+	}
+	return worker
 }
 
 // Start menjalankan loop pengingat hingga context dibatalkan.
@@ -73,20 +95,45 @@ func (w *ReminderWorker) runOnce(ctx context.Context) {
 	log.Printf("worker: processing %d due reminder job(s)", len(dueJobs))
 
 	for _, job := range dueJobs {
-		// Tandai sedang diproses
-		_ = w.reminderRepo.UpdateStatus(ctx, job.ID, models.ReminderStatusProcessing, nil, "")
+		if err := w.reminderRepo.UpdateStatus(ctx, job.ID, models.ReminderStatusProcessing, nil, ""); err != nil {
+			log.Printf("worker: failed to claim reminder job %s: %v", job.ID.Hex(), err)
+			continue
+		}
+		if job.ReminderType == models.ReminderTypePaymentDue && job.ExpiredAt != nil && !job.ExpiredAt.After(now) {
+			if err := w.reminderRepo.UpdateStatus(ctx, job.ID, models.ReminderStatusCancelled, nil, "invoice expired before payment reminder"); err != nil {
+				log.Printf("worker: failed to cancel expired payment reminder %s: %v", job.ID.Hex(), err)
+			}
+			continue
+		}
+		if job.ReminderType == models.ReminderTypePaymentDue && w.paymentRepo != nil {
+			payment, err := w.paymentRepo.FindByBookingID(ctx, job.BookingID)
+			if err != nil {
+				log.Printf("worker: failed to verify payment reminder for booking %s: %v", job.BookingCode, err)
+				w.retry(ctx, job, err)
+				continue
+			}
+			if payment.Status != models.PaymentStatusPending {
+				if err := w.reminderRepo.UpdateStatus(ctx, job.ID, models.ReminderStatusCancelled, nil, "payment is no longer pending"); err != nil {
+					log.Printf("worker: failed to cancel paid/expired reminder %s: %v", job.ID.Hex(), err)
+				}
+				continue
+			}
+		}
 
-		// Buat konten pesan notifikasi berdasarkan jenis pengingat
 		var title, message string
 		dateStr := job.BookingDate.Format("02 Jan 2006")
 
-		if job.ReminderType == models.ReminderTypeH24 {
+		switch job.ReminderType {
+		case models.ReminderTypePaymentDue:
+			title = "Pengingat Pembayaran Booking"
+			message = fmt.Sprintf("Pembayaran booking %s di %s masih menunggu. Silakan selesaikan sebelum invoice kedaluwarsa.", job.BookingCode, job.FieldName)
+		case models.ReminderTypeH24:
 			title = "Pengingat: Jadwal Bermain Besok 🎾"
 			message = fmt.Sprintf(
 				"Halo %s, jadwal bermain Anda di %s adalah besok (%s) pukul %s-%s WIB. Jangan lupa konfirmasi kehadiran tim Anda!",
 				job.UserName, job.FieldName, dateStr, job.StartTime, job.EndTime,
 			)
-		} else {
+		case models.ReminderTypeH2:
 			if remaining := job.PlayTime.Sub(now); remaining < 2*time.Hour {
 				title = "Pengingat: Jadwal Bermain Segera ⏳"
 				message = fmt.Sprintf(
@@ -100,42 +147,103 @@ func (w *ReminderWorker) runOnce(ctx context.Context) {
 					job.UserName, job.FieldName, job.StartTime,
 				)
 			}
-		}
-
-		// Simpan notifikasi ke kotak masuk in-app
-		notif := &models.Notification{
-			UserID:      job.UserID,
-			BookingID:   job.BookingID,
-			BookingCode: job.BookingCode,
-			Title:       title,
-			Message:     message,
-			Type:        models.NotificationTypeReminderMatch,
-			Channels:    []string{models.NotificationChannelInApp},
-			IsRead:      false,
-			Data: map[string]any{
-				"booking_code":  job.BookingCode,
-				"field_name":    job.FieldName,
-				"date":          dateStr,
-				"start_time":    job.StartTime,
-				"end_time":      job.EndTime,
-				"reminder_type": job.ReminderType,
-			},
-			CreatedAt: now,
-			ExpiresAt: now.AddDate(0, 1, 0), // TTL 30 hari
-		}
-
-		if err := w.notifRepo.Create(ctx, notif); err != nil {
-			log.Printf("worker: failed to deliver reminder to user %d (booking %s): %v", job.UserID, job.BookingCode, err)
-			_ = w.reminderRepo.IncrementRetry(ctx, job.ID, err.Error())
+		default:
+			err := fmt.Errorf("unknown reminder type %q", job.ReminderType)
+			log.Printf("worker: %v", err)
+			if updateErr := w.reminderRepo.UpdateStatus(ctx, job.ID, models.ReminderStatusFailed, nil, err.Error()); updateErr != nil {
+				log.Printf("worker: failed to mark unknown reminder job %s as failed: %v", job.ID.Hex(), updateErr)
+			}
 			continue
 		}
 
-		// Sukses dikirim
+		if !job.InAppSent {
+			notif := &models.Notification{
+				UserID:      job.UserID,
+				BookingID:   job.BookingID,
+				BookingCode: job.BookingCode,
+				Title:       title,
+				Message:     message,
+				Type:        reminderNotificationType(job.ReminderType),
+				Channels:    []string{models.NotificationChannelInApp},
+				IsRead:      false,
+				Data: map[string]any{
+					"booking_code":  job.BookingCode,
+					"field_name":    job.FieldName,
+					"date":          dateStr,
+					"start_time":    job.StartTime,
+					"end_time":      job.EndTime,
+					"reminder_type": job.ReminderType,
+				},
+				CreatedAt: now,
+				ExpiresAt: now.AddDate(0, 1, 0),
+			}
+			if job.ReminderType == models.ReminderTypePaymentDue {
+				notif.Data["payment_url"] = job.PaymentURL
+			}
+			if err := w.notifRepo.Create(ctx, notif); err != nil {
+				log.Printf("worker: failed to create reminder in-app notification for user %d (booking %s): %v", job.UserID, job.BookingCode, err)
+				w.retry(ctx, job, err)
+				continue
+			}
+			if err := w.reminderRepo.MarkInAppSent(ctx, job.ID); err != nil {
+				log.Printf("worker: failed to mark in-app reminder %s as sent: %v", job.ID.Hex(), err)
+				w.retry(ctx, job, err)
+				continue
+			}
+		}
+
+		userOptedIn := job.UserWhatsAppOptIn
+		if w.whatsApp != nil && w.userRepo != nil {
+			user, err := w.userRepo.FindByID(ctx, job.UserID)
+			if err != nil {
+				log.Printf("worker: failed to verify WhatsApp consent for user %d: %v", job.UserID, err)
+				w.retry(ctx, job, err)
+				continue
+			}
+			userOptedIn = user.WhatsAppOptIn
+			job.UserPhone = user.Phone
+		}
+		if userOptedIn && w.whatsApp != nil {
+			template, parameters := reminderTemplate(w.whatsAppCfg, job, dateStr)
+			if err := w.whatsApp.SendTemplate(ctx, job.UserPhone, template, w.whatsAppCfg.Language, parameters); err != nil {
+				log.Printf("worker: failed to send WhatsApp reminder to user %d (booking %s): %v", job.UserID, job.BookingCode, err)
+				w.retry(ctx, job, err)
+				continue
+			}
+		} else if userOptedIn {
+			log.Printf("worker: WhatsApp reminder for user %d (booking %s) skipped because the provider is not configured", job.UserID, job.BookingCode)
+		}
+
 		sentAt := time.Now()
 		if err := w.reminderRepo.UpdateStatus(ctx, job.ID, models.ReminderStatusSent, &sentAt, ""); err != nil {
 			log.Printf("worker: failed to update reminder job status %s: %v", job.ID.Hex(), err)
 		} else {
 			log.Printf("worker: reminder %s delivered to user %s for booking %s", job.ReminderType, job.UserName, job.BookingCode)
 		}
+	}
+}
+
+func (w *ReminderWorker) retry(ctx context.Context, job models.ReminderJob, cause error) {
+	if err := w.reminderRepo.IncrementRetry(ctx, job.ID, cause.Error()); err != nil {
+		log.Printf("worker: failed to retry reminder job %s after %v: %v", job.ID.Hex(), cause, err)
+	}
+}
+
+func reminderNotificationType(reminderType string) string {
+	if reminderType == models.ReminderTypePaymentDue {
+		return models.NotificationTypePaymentReminder
+	}
+	return models.NotificationTypeReminderMatch
+}
+
+func reminderTemplate(cfg config.WhatsAppConfig, job models.ReminderJob, date string) (string, []string) {
+	if job.ReminderType == models.ReminderTypePaymentDue {
+		return cfg.PaymentReminderTemplate, []string{
+			job.UserName, job.BookingCode, job.FieldName,
+			strconv.FormatFloat(job.Amount, 'f', 0, 64), job.PaymentURL,
+		}
+	}
+	return cfg.MatchReminderTemplate, []string{
+		job.UserName, job.FieldName, date, job.StartTime, job.EndTime, job.ReminderType,
 	}
 }

@@ -8,10 +8,16 @@ import (
 
 // RegisterRequest adalah payload pendaftaran user baru.
 type RegisterRequest struct {
-	Name     string `json:"name" validate:"required,min=3,max=100"`
-	Email    string `json:"email" validate:"required,email,max=150"`
-	Password string `json:"password" validate:"required,min=6,max=72"`
-	Phone    string `json:"phone" validate:"required,min=8,max=20"`
+	Name          string `json:"name" validate:"required,min=3,max=100"`
+	Email         string `json:"email" validate:"required,email,max=150"`
+	Password      string `json:"password" validate:"required,min=6,max=72"`
+	Phone         string `json:"phone" validate:"required,min=8,max=20"`
+	WhatsAppOptIn bool   `json:"whatsapp_opt_in"`
+}
+
+type NotificationPreferencesRequest struct {
+	WhatsAppOptIn bool    `json:"whatsapp_opt_in"`
+	Phone         *string `json:"phone" validate:"omitempty,max=20"`
 }
 
 // LoginRequest adalah payload login.
@@ -22,12 +28,13 @@ type LoginRequest struct {
 
 // UserResponse adalah representasi user yang aman dikirim ke client.
 type UserResponse struct {
-	ID        uint      `json:"id"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	Phone     string    `json:"phone"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
+	ID            uint      `json:"id"`
+	Name          string    `json:"name"`
+	Email         string    `json:"email"`
+	Phone         string    `json:"phone"`
+	WhatsAppOptIn bool      `json:"whatsapp_opt_in"`
+	Role          string    `json:"role"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // AuthResponse adalah hasil register/login.
@@ -40,12 +47,13 @@ type AuthResponse struct {
 // NewUserResponse memetakan model user menjadi response.
 func NewUserResponse(user models.User) UserResponse {
 	return UserResponse{
-		ID:        user.ID,
-		Name:      user.Name,
-		Email:     user.Email,
-		Phone:     user.Phone,
-		Role:      string(user.Role),
-		CreatedAt: user.CreatedAt,
+		ID:            user.ID,
+		Name:          user.Name,
+		Email:         user.Email,
+		Phone:         user.Phone,
+		WhatsAppOptIn: user.WhatsAppOptIn,
+		Role:          string(user.Role),
+		CreatedAt:     user.CreatedAt,
 	}
 }
 

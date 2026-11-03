@@ -17,14 +17,15 @@ func (r Role) Valid() bool {
 
 // User adalah akun yang dapat login ke sistem.
 type User struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Name      string    `gorm:"type:varchar(100);not null" json:"name"`
-	Email     string    `gorm:"type:varchar(150);not null;uniqueIndex" json:"email"`
-	Password  string    `gorm:"type:varchar(255);not null" json:"-"`
-	Phone     string    `gorm:"type:varchar(20)" json:"phone"`
-	Role      Role      `gorm:"type:varchar(20);not null;default:'USER';index" json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	Name          string    `gorm:"type:varchar(100);not null" json:"name"`
+	Email         string    `gorm:"type:varchar(150);not null;uniqueIndex" json:"email"`
+	Password      string    `gorm:"type:varchar(255);not null" json:"-"`
+	Phone         string    `gorm:"type:varchar(20)" json:"phone"`
+	WhatsAppOptIn bool      `gorm:"not null;default:false" json:"whatsapp_opt_in"`
+	Role          Role      `gorm:"type:varchar(20);not null;default:'USER';index" json:"role"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 
 	Bookings []Booking `gorm:"foreignKey:UserID" json:"-"`
 }

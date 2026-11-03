@@ -13,14 +13,32 @@ import (
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/timeutil"
+	"Booking-Lapangan/pkg/whatsapp"
 	"Booking-Lapangan/repository"
 )
+
+type VenueAnnouncementResult struct {
+	Recipients         int  `json:"recipients"`
+	InAppEnabled       bool `json:"in_app_enabled"`
+	WhatsAppRecipients int  `json:"whatsapp_recipients"`
+	WhatsAppSent       int  `json:"whatsapp_sent"`
+	WhatsAppFailed     int  `json:"whatsapp_failed"`
+	InAppFailed        int  `json:"in_app_failed"`
+	WhatsAppEnabled    bool `json:"whatsapp_enabled"`
+}
+
+type NotificationOptions struct {
+	WhatsAppConfig config.WhatsAppConfig
+	WhatsAppSender whatsapp.Sender
+}
 
 // NotificationController mengelola penjadwalan reminder dan inbox notifikasi berbasis MongoDB.
 type NotificationController interface {
 	ScheduleRemindersForBooking(ctx context.Context, bookingID uint) error
+	SchedulePaymentReminder(ctx context.Context, bookingID uint, paymentURL string, expiresAt time.Time) error
 	CancelRemindersForBooking(ctx context.Context, bookingID uint) error
 	RescheduleBooking(ctx context.Context, bookingID uint) error
+	PublishVenueAnnouncement(ctx context.Context, title, message string) (*VenueAnnouncementResult, error)
 	ListUserNotifications(ctx context.Context, userID uint, page, limit int, unreadOnly bool) ([]models.Notification, int64, error)
 	GetUnreadCount(ctx context.Context, userID uint) (int64, error)
 	MarkAsRead(ctx context.Context, notifIDHex string, userID uint) error
@@ -33,6 +51,8 @@ type notificationController struct {
 	notifRepo    repository.NotificationRepository
 	reminderRepo repository.ReminderRepository
 	mongoCfg     config.MongoConfig
+	whatsAppCfg  config.WhatsAppConfig
+	whatsApp     whatsapp.Sender
 }
 
 // NewNotificationController membuat controller notifikasi.
@@ -41,60 +61,73 @@ func NewNotificationController(
 	notifRepo repository.NotificationRepository,
 	reminderRepo repository.ReminderRepository,
 	mongoCfg config.MongoConfig,
+	options ...NotificationOptions,
 ) NotificationController {
-	return &notificationController{
+	controller := &notificationController{
 		uow:          uow,
 		notifRepo:    notifRepo,
 		reminderRepo: reminderRepo,
 		mongoCfg:     mongoCfg,
 	}
+	if len(options) > 0 {
+		controller.whatsAppCfg = options[0].WhatsAppConfig
+		controller.whatsApp = options[0].WhatsAppSender
+	}
+	return controller
 }
 
 // ScheduleRemindersForBooking membuat dokumen pengingat H-24 dan H-2 jam di MongoDB saat booking CONFIRMED.
 func (c *notificationController) ScheduleRemindersForBooking(ctx context.Context, bookingID uint) error {
-	if c.reminderRepo == nil {
-		log.Println("notification: mongodb reminder repository is not initialized, skipping reminder scheduling")
-		return nil
-	}
-
 	booking, err := c.uow.Booking().FindDetailByID(ctx, bookingID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch booking details for reminder: %w", err)
 	}
 
 	now := timeNow()
-	jobs, err := c.buildReminderJobs(booking, now)
-	if err != nil {
-		return err
-	}
-
-	if len(jobs) > 0 {
-		if err := c.reminderRepo.CreateJobs(ctx, jobs); err != nil {
-			log.Printf("notification: failed to insert reminder jobs: %v", err)
+	var result error
+	if c.reminderRepo != nil {
+		if err := c.reminderRepo.CancelByBookingID(ctx, bookingID); err != nil {
+			result = errors.Join(result, fmt.Errorf("failed to cancel stale reminder jobs for booking %d: %w", bookingID, err))
 		} else {
-			log.Printf("notification: %d reminder job(s) scheduled for booking %s", len(jobs), booking.BookingCode)
+			jobs, err := c.buildReminderJobs(booking, now)
+			if err != nil {
+				result = errors.Join(result, err)
+			} else if len(jobs) > 0 {
+				if err := c.reminderRepo.CreateJobs(ctx, jobs); err != nil {
+					result = errors.Join(result, fmt.Errorf("failed to insert reminder jobs: %w", err))
+				} else {
+					log.Printf("notification: %d reminder job(s) scheduled for booking %s", len(jobs), booking.BookingCode)
+				}
+			}
 		}
 	}
 
-	// Buat notifikasi in-app langsung bahwa booking telah dikonfirmasi
+	dateStr := booking.BookingDate.Format("02 Jan 2006")
+	field := fieldName(booking)
+	userName := ""
+	if booking.User != nil {
+		userName = booking.User.Name
+	}
+	channels := []string{models.NotificationChannelInApp}
+	whatsAppSent, whatsAppErr := c.sendWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingConfirmedTemplate, []string{
+		userName, booking.BookingCode, field, dateStr, booking.StartTime, booking.EndTime,
+	})
+	if whatsAppSent {
+		channels = append(channels, models.NotificationChannelWA)
+	}
 	if c.notifRepo != nil {
-		dateStr := booking.BookingDate.Format("02 Jan 2006")
-		fieldName := ""
-		if booking.Field != nil {
-			fieldName = booking.Field.Name
-		}
-		_ = c.notifRepo.Create(ctx, &models.Notification{
+		createErr := c.notifRepo.Create(ctx, &models.Notification{
 			UserID:      booking.UserID,
 			BookingID:   booking.ID,
 			BookingCode: booking.BookingCode,
 			Title:       "Booking Berhasil Dikonfirmasi 🎉",
-			Message:     fmt.Sprintf("Pembayaran booking %s berhasil! Jadwal Anda di %s pada %s pukul %s-%s WIB telah terkonfirmasi.", booking.BookingCode, fieldName, dateStr, booking.StartTime, booking.EndTime),
+			Message:     fmt.Sprintf("Pembayaran booking %s berhasil! Jadwal Anda di %s pada %s pukul %s-%s WIB telah terkonfirmasi.", booking.BookingCode, field, dateStr, booking.StartTime, booking.EndTime),
 			Type:        models.NotificationTypeBookingConfirmed,
-			Channels:    []string{models.NotificationChannelInApp},
+			Channels:    channels,
 			IsRead:      false,
 			Data: map[string]any{
 				"booking_code": booking.BookingCode,
-				"field_name":   fieldName,
+				"field_name":   field,
 				"date":         dateStr,
 				"start_time":   booking.StartTime,
 				"end_time":     booking.EndTime,
@@ -102,8 +135,52 @@ func (c *notificationController) ScheduleRemindersForBooking(ctx context.Context
 			CreatedAt: now,
 			ExpiresAt: now.AddDate(0, 1, 0), // 30 hari TTL
 		})
+		result = errors.Join(result, createErr)
 	}
+	if whatsAppErr != nil {
+		result = errors.Join(result, whatsAppErr)
+	}
+	return result
+}
 
+// SchedulePaymentReminder membuat satu pengingat tertunda untuk invoice yang belum dibayar.
+func (c *notificationController) SchedulePaymentReminder(ctx context.Context, bookingID uint, paymentURL string, expiresAt time.Time) error {
+	if c.reminderRepo == nil {
+		return nil
+	}
+	booking, err := c.uow.Booking().FindDetailByID(ctx, bookingID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch booking details for payment reminder: %w", err)
+	}
+	if booking.User == nil {
+		return fmt.Errorf("booking %d does not include user details for payment reminder", bookingID)
+	}
+	delay := c.whatsAppCfg.PaymentReminderDelay
+	if delay <= 0 {
+		delay = 10 * time.Minute
+	}
+	now := timeNow()
+	scheduledFor := now.Add(delay)
+	if !expiresAt.After(scheduledFor) {
+		return nil
+	}
+	fieldName := ""
+	if booking.Field != nil {
+		fieldName = booking.Field.Name
+	}
+	job := models.ReminderJob{
+		BookingID: booking.ID, BookingCode: booking.BookingCode,
+		UserID: booking.UserID, UserName: booking.User.Name, UserEmail: booking.User.Email,
+		UserPhone: booking.User.Phone, UserWhatsAppOptIn: booking.User.WhatsAppOptIn,
+		FieldID: booking.FieldID, FieldName: fieldName, BookingDate: booking.BookingDate,
+		StartTime: booking.StartTime, EndTime: booking.EndTime,
+		ReminderType: models.ReminderTypePaymentDue, ScheduledFor: scheduledFor,
+		PaymentURL: paymentURL, ExpiredAt: &expiresAt, Amount: booking.TotalPrice,
+		Status: models.ReminderStatusScheduled, CreatedAt: now,
+	}
+	if err := c.reminderRepo.CreateJobs(ctx, []models.ReminderJob{job}); err != nil {
+		return fmt.Errorf("failed to schedule payment reminder for booking %s: %w", booking.BookingCode, err)
+	}
 	return nil
 }
 
@@ -117,36 +194,45 @@ func (c *notificationController) CancelRemindersForBooking(ctx context.Context, 
 		}
 	}
 
-	if c.notifRepo != nil {
-		booking, err := c.uow.Booking().FindByID(ctx, bookingID)
-		if err != nil {
-			result = errors.Join(result, fmt.Errorf("failed to load cancelled booking %d for notification: %w", bookingID, err))
-		} else if booking == nil {
-			result = errors.Join(result, fmt.Errorf("cancelled booking %d was not found for notification", bookingID))
-		} else {
-			now := timeNow()
-			message := fmt.Sprintf("Jadwal booking Anda dengan kode %s telah dibatalkan.", booking.BookingCode)
-			if booking.RefundReviewRequired {
-				message += " Pembayaran yang sudah diterima tidak dikembalikan otomatis dan perlu ditinjau untuk proses refund."
-			}
-			if createErr := c.notifRepo.Create(ctx, &models.Notification{
-				UserID:      booking.UserID,
-				BookingID:   booking.ID,
-				BookingCode: booking.BookingCode,
-				Title:       "Booking Dibatalkan",
-				Message:     message,
-				Type:        models.NotificationTypeBookingCancelled,
-				Channels:    []string{models.NotificationChannelInApp},
-				IsRead:      false,
-				CreatedAt:   now,
-				ExpiresAt:   now.AddDate(0, 1, 0),
-			}); createErr != nil {
-				result = errors.Join(result, createErr)
-			}
+	booking, err := c.uow.Booking().FindDetailByID(ctx, bookingID)
+	if err != nil {
+		return errors.Join(result, fmt.Errorf("failed to load cancelled booking %d for notification: %w", bookingID, err))
+	}
+	if booking == nil {
+		return errors.Join(result, fmt.Errorf("cancelled booking %d was not found for notification", bookingID))
+	}
+	message := fmt.Sprintf("Jadwal booking Anda dengan kode %s telah dibatalkan.", booking.BookingCode)
+	if booking.RefundReviewRequired {
+		message += " Pembayaran yang sudah diterima tidak dikembalikan otomatis dan perlu ditinjau untuk proses refund."
+	}
+	channels := []string{models.NotificationChannelInApp}
+	var whatsAppErr error
+	if booking.User != nil {
+		whatsAppSent, sendErr := c.sendWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingCancelledTemplate, []string{
+			booking.User.Name, booking.BookingCode, fieldName(booking),
+		})
+		whatsAppErr = sendErr
+		if whatsAppSent {
+			channels = append(channels, models.NotificationChannelWA)
 		}
 	}
-
-	return result
+	if c.notifRepo != nil {
+		now := timeNow()
+		if createErr := c.notifRepo.Create(ctx, &models.Notification{
+			UserID:      booking.UserID,
+			BookingID:   booking.ID,
+			BookingCode: booking.BookingCode,
+			Title:       "Booking Dibatalkan",
+			Message:     message,
+			Type:        models.NotificationTypeBookingCancelled,
+			Channels:    channels,
+			IsRead:      false,
+			CreatedAt:   now, ExpiresAt: now.AddDate(0, 1, 0),
+		}); createErr != nil {
+			result = errors.Join(result, createErr)
+		}
+	}
+	return errors.Join(result, whatsAppErr)
 }
 
 // RescheduleBooking refreshes pending reminders and creates one in-app
@@ -168,34 +254,116 @@ func (c *notificationController) RescheduleBooking(ctx context.Context, bookingI
 			return err
 		}
 	}
-	if c.notifRepo == nil {
-		return nil
-	}
 	now := timeNow()
 	dateStr := booking.BookingDate.Format("02 Jan 2006")
-	fieldName := ""
-	if booking.Field != nil {
-		fieldName = booking.Field.Name
+	channels := []string{models.NotificationChannelInApp}
+	var whatsAppErr error
+	if booking.User != nil {
+		whatsAppSent, sendErr := c.sendWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingRescheduledTemplate, []string{
+			booking.User.Name, booking.BookingCode, fieldName(booking), dateStr, booking.StartTime, booking.EndTime,
+		})
+		whatsAppErr = sendErr
+		if whatsAppSent {
+			channels = append(channels, models.NotificationChannelWA)
+		}
 	}
-	return c.notifRepo.Create(ctx, &models.Notification{
-		UserID:      booking.UserID,
-		BookingID:   booking.ID,
-		BookingCode: booking.BookingCode,
-		Title:       "Jadwal Booking Diubah",
-		Message:     fmt.Sprintf("Jadwal booking %s telah diubah menjadi %s pukul %s-%s WIB.", booking.BookingCode, dateStr, booking.StartTime, booking.EndTime),
-		Type:        models.NotificationTypeBookingRescheduled,
-		Channels:    []string{models.NotificationChannelInApp},
-		IsRead:      false,
-		Data: map[string]any{
-			"booking_code": booking.BookingCode,
-			"field_name":   fieldName,
-			"date":         dateStr,
-			"start_time":   booking.StartTime,
-			"end_time":     booking.EndTime,
-		},
-		CreatedAt: now,
-		ExpiresAt: now.AddDate(0, 1, 0),
-	})
+	var createErr error
+	if c.notifRepo != nil {
+		createErr = c.notifRepo.Create(ctx, &models.Notification{
+			UserID:      booking.UserID,
+			BookingID:   booking.ID,
+			BookingCode: booking.BookingCode,
+			Title:       "Jadwal Booking Diubah",
+			Message:     fmt.Sprintf("Jadwal booking %s telah diubah menjadi %s pukul %s-%s WIB.", booking.BookingCode, dateStr, booking.StartTime, booking.EndTime),
+			Type:        models.NotificationTypeBookingRescheduled,
+			Channels:    channels,
+			IsRead:      false,
+			Data: map[string]any{
+				"booking_code": booking.BookingCode,
+				"field_name":   fieldName(booking),
+				"date":         dateStr,
+				"start_time":   booking.StartTime,
+				"end_time":     booking.EndTime,
+			},
+			CreatedAt: now,
+			ExpiresAt: now.AddDate(0, 1, 0),
+		})
+	}
+	return errors.Join(createErr, whatsAppErr)
+}
+
+// PublishVenueAnnouncement mengirimkan pengumuman ke seluruh pengguna terdaftar.
+func (c *notificationController) PublishVenueAnnouncement(ctx context.Context, title, message string) (*VenueAnnouncementResult, error) {
+	result := &VenueAnnouncementResult{
+		InAppEnabled:    c.notifRepo != nil,
+		WhatsAppEnabled: c.whatsApp != nil,
+	}
+	page := 1
+	const pageSize = 100
+	for {
+		users, total, err := c.uow.User().FindAll(ctx, repository.ListParams{Page: page, Limit: pageSize})
+		if err != nil {
+			return result, fmt.Errorf("failed to list users for venue announcement: %w", err)
+		}
+		if len(users) == 0 {
+			break
+		}
+		for i := range users {
+			user := &users[i]
+			result.Recipients++
+			now := timeNow()
+			channels := []string{models.NotificationChannelInApp}
+			if user.WhatsAppOptIn {
+				sent, sendErr := c.sendWhatsApp(ctx, user, c.whatsAppCfg.VenueAnnouncementTemplate, []string{title, message})
+				if sendErr != nil {
+					result.WhatsAppFailed++
+					log.Printf("notification: failed to send venue announcement to user %d: %v", user.ID, sendErr)
+				} else if sent {
+					result.WhatsAppSent++
+					channels = append(channels, models.NotificationChannelWA)
+				}
+				result.WhatsAppRecipients++
+			}
+			if c.notifRepo != nil {
+				if err := c.notifRepo.Create(ctx, &models.Notification{
+					UserID: user.ID, Title: title, Message: message,
+					Type:     models.NotificationTypeVenueAnnouncement,
+					Channels: channels,
+					IsRead:   false, CreatedAt: now, ExpiresAt: now.AddDate(0, 1, 0),
+				}); err != nil {
+					result.InAppFailed++
+					log.Printf("notification: failed to create venue announcement for user %d: %v", user.ID, err)
+				}
+			}
+		}
+		if int64(page*pageSize) >= total || len(users) < pageSize {
+			break
+		}
+		page++
+	}
+	return result, nil
+}
+
+func (c *notificationController) sendWhatsApp(ctx context.Context, user *models.User, template string, parameters []string) (bool, error) {
+	if user == nil || !user.WhatsAppOptIn {
+		return false, nil
+	}
+	if c.whatsApp == nil {
+		return false, fmt.Errorf("WhatsApp Cloud API is not configured")
+	}
+	sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := c.whatsApp.SendTemplate(sendCtx, user.Phone, template, c.whatsAppCfg.Language, parameters); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func fieldName(booking *models.Booking) string {
+	if booking != nil && booking.Field != nil {
+		return booking.Field.Name
+	}
+	return ""
 }
 
 func (c *notificationController) buildReminderJobs(booking *models.Booking, now time.Time) ([]models.ReminderJob, error) {
@@ -232,7 +400,8 @@ func (c *notificationController) buildReminderJobs(booking *models.Booking, now 
 			jobs = append(jobs, models.ReminderJob{
 				BookingID: booking.ID, BookingCode: booking.BookingCode,
 				UserID: booking.UserID, UserName: userName, UserEmail: userEmail, UserPhone: userPhone,
-				FieldID: booking.FieldID, FieldName: fieldName, BookingDate: booking.BookingDate,
+				UserWhatsAppOptIn: booking.User != nil && booking.User.WhatsAppOptIn,
+				FieldID:           booking.FieldID, FieldName: fieldName, BookingDate: booking.BookingDate,
 				StartTime: booking.StartTime, EndTime: booking.EndTime, PlayTime: playTime,
 				ReminderType: reminder.kind, ScheduledFor: scheduledFor,
 				Status: models.ReminderStatusScheduled, CreatedAt: now,

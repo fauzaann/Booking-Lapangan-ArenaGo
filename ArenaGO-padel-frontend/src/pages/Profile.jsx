@@ -8,20 +8,33 @@ import StatusBadge from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 
 export default function Profile() {
-  const { user, updateProfile, logout } = useAuth();
+  const { user, updateProfile, updateWhatsAppPreference, logout } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: user.name, phone: user.phone });
+  const [form, setForm] = useState({
+    name: user.name, phone: user.phone, whatsapp_opt_in: Boolean(user.whatsapp_opt_in),
+  });
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
     setSaved(false);
   }
 
-  function handleSave(e) {
+  async function handleSave(e) {
     e.preventDefault();
-    updateProfile(form);
-    setSaved(true);
+    setSaving(true);
+    setError("");
+    try {
+      await updateWhatsAppPreference(form.whatsapp_opt_in, form.phone);
+      updateProfile({ name: form.name, phone: form.phone });
+      setSaved(true);
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleLogout() {
@@ -57,8 +70,21 @@ export default function Profile() {
             value={form.phone}
             onChange={(e) => update("phone", e.target.value)}
           />
+          <label className="flex items-start gap-3 text-sm text-ink-muted">
+            <input
+              type="checkbox"
+              checked={form.whatsapp_opt_in}
+              onChange={(event) => update("whatsapp_opt_in", event.target.checked)}
+              className="mt-1 accent-onyx"
+            />
+            <span>
+              Kirim pengingat pembayaran, perubahan booking, dan pengumuman venue ke WhatsApp saya.
+              Persetujuan ini bisa dicabut kapan saja.
+            </span>
+          </label>
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
           <div className="flex items-center gap-3 pt-2">
-            <Button type="submit">Simpan Perubahan</Button>
+            <Button type="submit" disabled={saving}>{saving ? "Menyimpan..." : "Simpan Perubahan"}</Button>
             {saved && (
               <span className="flex items-center gap-1.5 text-sm text-sage">
                 <Icon name="check_circle" size={16} filled />

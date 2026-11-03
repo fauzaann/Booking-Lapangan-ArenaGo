@@ -9,6 +9,7 @@ import (
 	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/jwt"
 	"Booking-Lapangan/pkg/password"
+	"Booking-Lapangan/pkg/whatsapp"
 	"Booking-Lapangan/repository"
 )
 
@@ -17,6 +18,7 @@ type AuthController interface {
 	Register(ctx context.Context, req dto.RegisterRequest) (*dto.AuthResponse, error)
 	Login(ctx context.Context, req dto.LoginRequest) (*dto.AuthResponse, error)
 	Profile(ctx context.Context, userID uint) (*dto.UserResponse, error)
+	UpdateWhatsAppPreference(ctx context.Context, userID uint, optIn bool, phone *string) (*dto.UserResponse, error)
 }
 
 type authController struct {
@@ -46,12 +48,21 @@ func (c *authController) Register(ctx context.Context, req dto.RegisterRequest) 
 		return nil, apperror.Internal("failed to secure password", err)
 	}
 
+	phone := strings.TrimSpace(req.Phone)
+	if req.WhatsAppOptIn {
+		normalized, err := whatsapp.NormalizePhone(phone)
+		if err != nil {
+			return nil, apperror.BadRequest(err.Error())
+		}
+		phone = "+" + normalized
+	}
 	user := &models.User{
-		Name:     strings.TrimSpace(req.Name),
-		Email:    email,
-		Password: hashed,
-		Phone:    strings.TrimSpace(req.Phone),
-		Role:     models.RoleUser,
+		Name:          strings.TrimSpace(req.Name),
+		Email:         email,
+		Password:      hashed,
+		Phone:         phone,
+		WhatsAppOptIn: req.WhatsAppOptIn,
+		Role:          models.RoleUser,
 	}
 
 	if err := c.users.Create(ctx, user); err != nil {
@@ -62,6 +73,32 @@ func (c *authController) Register(ctx context.Context, req dto.RegisterRequest) 
 	}
 
 	return c.issueToken(user)
+}
+
+func (c *authController) UpdateWhatsAppPreference(ctx context.Context, userID uint, optIn bool, phone *string) (*dto.UserResponse, error) {
+	user, err := c.users.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if phone != nil {
+		user.Phone = strings.TrimSpace(*phone)
+	}
+	if optIn && strings.TrimSpace(user.Phone) == "" {
+		return nil, apperror.Unprocessable("phone number is required to enable WhatsApp notifications")
+	}
+	if optIn {
+		normalized, err := whatsapp.NormalizePhone(user.Phone)
+		if err != nil {
+			return nil, apperror.BadRequest(err.Error())
+		}
+		user.Phone = "+" + normalized
+	}
+	user.WhatsAppOptIn = optIn
+	if err := c.users.Update(ctx, user); err != nil {
+		return nil, err
+	}
+	response := dto.NewUserResponse(*user)
+	return &response, nil
 }
 
 // Login memverifikasi kredensial dan menerbitkan token sesi.

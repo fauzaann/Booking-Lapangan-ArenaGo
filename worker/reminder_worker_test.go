@@ -8,12 +8,15 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"Booking-Lapangan/config"
 	"Booking-Lapangan/models"
+	"Booking-Lapangan/repository"
 )
 
 type mockReminderRepo struct {
-	dueJobs []models.ReminderJob
-	sentIDs []string
+	dueJobs  []models.ReminderJob
+	sentIDs  []string
+	statuses map[string]string
 }
 
 func (m *mockReminderRepo) CreateJobs(ctx context.Context, jobs []models.ReminderJob) error {
@@ -29,11 +32,17 @@ func (m *mockReminderRepo) FindDueJobs(ctx context.Context, now time.Time, limit
 }
 
 func (m *mockReminderRepo) UpdateStatus(ctx context.Context, id bson.ObjectID, status string, sentAt *time.Time, errMsg string) error {
+	if m.statuses == nil {
+		m.statuses = make(map[string]string)
+	}
+	m.statuses[id.Hex()] = status
 	if status == models.ReminderStatusSent {
 		m.sentIDs = append(m.sentIDs, id.Hex())
 	}
 	return nil
 }
+
+func (m *mockReminderRepo) MarkInAppSent(context.Context, bson.ObjectID) error { return nil }
 
 func (m *mockReminderRepo) IncrementRetry(ctx context.Context, id bson.ObjectID, errMsg string) error {
 	return nil
@@ -49,6 +58,42 @@ func (m *mockReminderRepo) FindAll(ctx context.Context, page, limit int, status 
 
 func (m *mockReminderRepo) EnsureIndexes(ctx context.Context) error {
 	return nil
+}
+
+type mockReminderPaymentRepo struct {
+	repository.PaymentRepository
+	payment *models.Payment
+	err     error
+}
+
+func (m *mockReminderPaymentRepo) FindByBookingID(context.Context, uint) (*models.Payment, error) {
+	return m.payment, m.err
+}
+
+type mockReminderUserRepo struct {
+	repository.UserRepository
+	user *models.User
+	err  error
+}
+
+func (m *mockReminderUserRepo) FindByID(context.Context, uint) (*models.User, error) {
+	return m.user, m.err
+}
+
+type mockReminderWhatsAppSender struct {
+	recipient  string
+	template   string
+	language   string
+	parameters []string
+	err        error
+}
+
+func (m *mockReminderWhatsAppSender) SendTemplate(_ context.Context, recipient, template, language string, parameters []string) error {
+	m.recipient = recipient
+	m.template = template
+	m.language = language
+	m.parameters = parameters
+	return m.err
 }
 
 type mockNotifRepo struct {
@@ -101,6 +146,7 @@ func TestReminderWorkerRunOnce(t *testing.T) {
 			},
 		},
 	}
+
 	mockNotif := &mockNotifRepo{}
 
 	w := NewReminderWorker(mockReminder, mockNotif, time.Second)
@@ -130,4 +176,74 @@ func TestReminderWorkerRunOnce(t *testing.T) {
 	if len(mockReminder.sentIDs) != 1 || mockReminder.sentIDs[0] != jobID.Hex() {
 		t.Errorf("expected sent job ID %s, got %v", jobID.Hex(), mockReminder.sentIDs)
 	}
+}
+
+func TestReminderWorkerSendsPaymentReminderAndChecksCurrentConsent(t *testing.T) {
+	jobID := bson.NewObjectID()
+	mockReminder := &mockReminderRepo{dueJobs: []models.ReminderJob{{
+		ID: jobID, BookingID: 50, BookingCode: "AG-PAY-001", UserID: 7,
+		UserName: "Rizki", UserPhone: "+6281234567890", UserWhatsAppOptIn: true,
+		FieldName: "Lapangan Beta", BookingDate: time.Now().AddDate(0, 0, 1),
+		StartTime: "20:00", EndTime: "21:00", ReminderType: models.ReminderTypePaymentDue,
+		ScheduledFor: time.Now().Add(-time.Minute), PaymentURL: "https://pay.example/invoice",
+		ExpiredAt: timePointer(time.Now().Add(time.Hour)), Amount: 200000,
+	}}}
+	mockNotif := &mockNotifRepo{}
+	sender := &mockReminderWhatsAppSender{}
+	userRepo := &mockReminderUserRepo{user: &models.User{
+		ID: 7, Name: "Rizki", Phone: "+6281234567890", WhatsAppOptIn: true,
+	}}
+	paymentRepo := &mockReminderPaymentRepo{payment: &models.Payment{Status: models.PaymentStatusPending}}
+
+	w := NewReminderWorker(mockReminder, mockNotif, time.Second, ReminderWorkerOptions{
+		WhatsAppConfig:    config.WhatsAppConfig{Language: "id", PaymentReminderTemplate: "payment_reminder"},
+		WhatsAppSender:    sender,
+		UserRepository:    userRepo,
+		PaymentRepository: paymentRepo,
+	})
+	w.runOnce(context.Background())
+
+	if len(mockNotif.delivered) != 1 || mockNotif.delivered[0].Type != models.NotificationTypePaymentReminder {
+		t.Fatalf("expected one payment reminder in-app notification, got %+v", mockNotif.delivered)
+	}
+	if mockNotif.delivered[0].Data["payment_url"] != "https://pay.example/invoice" {
+		t.Fatalf("payment URL missing from notification data: %+v", mockNotif.delivered[0].Data)
+	}
+	if sender.template != "payment_reminder" || sender.recipient != "+6281234567890" {
+		t.Fatalf("unexpected WhatsApp delivery: %+v", sender)
+	}
+	if len(sender.parameters) != 5 || sender.parameters[4] != "https://pay.example/invoice" {
+		t.Fatalf("unexpected WhatsApp template parameters: %v", sender.parameters)
+	}
+	if mockReminder.statuses[jobID.Hex()] != models.ReminderStatusSent {
+		t.Fatalf("expected reminder status SENT, got %q", mockReminder.statuses[jobID.Hex()])
+	}
+}
+
+func TestReminderWorkerCancelsPaymentReminderAfterPayment(t *testing.T) {
+	jobID := bson.NewObjectID()
+	mockReminder := &mockReminderRepo{dueJobs: []models.ReminderJob{{
+		ID: jobID, BookingID: 51, BookingCode: "AG-PAY-002", UserID: 7,
+		ReminderType: models.ReminderTypePaymentDue,
+		ScheduledFor: time.Now().Add(-time.Minute), ExpiredAt: timePointer(time.Now().Add(time.Hour)),
+	}}}
+	mockNotif := &mockNotifRepo{}
+	sender := &mockReminderWhatsAppSender{}
+	w := NewReminderWorker(mockReminder, mockNotif, time.Second, ReminderWorkerOptions{
+		WhatsAppSender:    sender,
+		PaymentRepository: &mockReminderPaymentRepo{payment: &models.Payment{Status: models.PaymentStatusPaid}},
+	})
+
+	w.runOnce(context.Background())
+
+	if len(mockNotif.delivered) != 0 || sender.template != "" {
+		t.Fatal("paid booking should not receive a payment reminder")
+	}
+	if mockReminder.statuses[jobID.Hex()] != models.ReminderStatusCancelled {
+		t.Fatalf("expected reminder status CANCELLED, got %q", mockReminder.statuses[jobID.Hex()])
+	}
+}
+
+func timePointer(value time.Time) *time.Time {
+	return &value
 }

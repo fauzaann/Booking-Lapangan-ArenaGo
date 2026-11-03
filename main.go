@@ -22,6 +22,7 @@ import (
 	"Booking-Lapangan/pkg/fieldcache"
 	"Booking-Lapangan/pkg/jwt"
 	"Booking-Lapangan/pkg/validator"
+	"Booking-Lapangan/pkg/whatsapp"
 	"Booking-Lapangan/repository"
 	"Booking-Lapangan/router"
 	"Booking-Lapangan/worker"
@@ -131,7 +132,17 @@ func main() {
 		indexCancel()
 	}
 
-	notifController = controllers.NewNotificationController(uow, notifRepo, reminderRepo, cfg.Mongo)
+	var whatsAppSender whatsapp.Sender
+	if cfg.WhatsApp.PhoneNumberID != "" && cfg.WhatsApp.AccessToken != "" {
+		whatsAppSender = whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.BaseURL)
+		log.Println("whatsapp: Cloud API notifications enabled")
+	} else {
+		log.Println("whatsapp: Cloud API credentials are not configured; WhatsApp notifications are disabled")
+	}
+	notifController = controllers.NewNotificationController(uow, notifRepo, reminderRepo, cfg.Mongo, controllers.NotificationOptions{
+		WhatsAppConfig: cfg.WhatsApp,
+		WhatsAppSender: whatsAppSender,
+	})
 	notifHandler = handler.NewNotificationHandler(notifController, validate)
 
 	authController := controllers.NewAuthController(uow.User(), tokens)
@@ -152,6 +163,7 @@ func main() {
 		CancelMinHours: cfg.Booking.CancelMinHours, InvoiceDuration: cfg.Xendit.InvoiceDuration,
 		SuccessRedirectURL: cfg.Xendit.SuccessRedirectURL, FailureRedirectURL: cfg.Xendit.FailureRedirectURL,
 	})
+	checkoutController.SetNotificationController(notifController)
 	adminController := controllers.NewAdminController(uow)
 
 	// Hubungkan notifikasi ke lifecycle pembayaran dan pembatalan booking
@@ -191,7 +203,12 @@ func main() {
 	go expirer.Start(ctx)
 
 	if reminderRepo != nil && notifRepo != nil {
-		reminderWorker := worker.NewReminderWorker(reminderRepo, notifRepo, cfg.Mongo.WorkerInterval)
+		reminderWorker := worker.NewReminderWorker(reminderRepo, notifRepo, cfg.Mongo.WorkerInterval, worker.ReminderWorkerOptions{
+			WhatsAppConfig:    cfg.WhatsApp,
+			WhatsAppSender:    whatsAppSender,
+			UserRepository:    uow.User(),
+			PaymentRepository: uow.Payment(),
+		})
 		go reminderWorker.Start(ctx)
 	}
 

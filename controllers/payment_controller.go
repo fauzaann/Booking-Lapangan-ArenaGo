@@ -452,6 +452,7 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 			if err != nil {
 				return err
 			}
+			shouldNotify := payment.Status != models.PaymentStatusPaid || currentBooking.Status != models.BookingStatusConfirmed
 			now := timeNow()
 			paidAt := invoice.PaidAt
 			if paidAt == nil {
@@ -477,7 +478,9 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 				}
 				currentBooking.CheckInToken = &checkInToken
 			}
-			confirmedBookingID = currentBooking.ID
+			if shouldNotify {
+				confirmedBookingID = currentBooking.ID
+			}
 			return r.Booking().Update(ctx, currentBooking)
 		})
 		if err != nil {
@@ -486,12 +489,14 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 
 		if confirmedBookingID > 0 && c.notif != nil {
 			go func() {
-				_ = c.notif.ScheduleRemindersForBooking(context.Background(), confirmedBookingID)
+				if err := c.notif.ScheduleRemindersForBooking(context.Background(), confirmedBookingID); err != nil {
+					log.Printf("payment: failed to schedule reminders for booking %d: %v", confirmedBookingID, err)
+				}
 			}()
 		}
 
 	case xendit.StatusExpired:
-		_ = c.uow.Atomic(ctx, func(r repository.Registry) error {
+		if err := c.uow.Atomic(ctx, func(r repository.Registry) error {
 			payment.Status = models.PaymentStatusExpired
 			if err := r.Payment().Update(ctx, payment); err != nil {
 				return err
@@ -501,7 +506,9 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 				return r.Booking().Update(ctx, booking)
 			}
 			return nil
-		})
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	res := dto.NewPaymentResponse(*payment)

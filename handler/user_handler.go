@@ -34,6 +34,21 @@ func (h *UserHandler) Profile(c *gin.Context) {
 	response.OK(c, "Profile retrieved", result)
 }
 
+// UpdateNotificationPreferences menangani PATCH /api/v1/me/notification-preferences.
+func (h *UserHandler) UpdateNotificationPreferences(c *gin.Context) {
+	var req dto.NotificationPreferencesRequest
+	if !h.bindJSON(c, &req) {
+		return
+	}
+	actor := middleware.MustActor(c)
+	result, err := h.auth.UpdateWhatsAppPreference(c.Request.Context(), actor.UserID, req.WhatsAppOptIn, req.Phone)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, "Notification preferences updated", result)
+}
+
 // List menangani GET /api/v1/admin/users.
 func (h *UserHandler) List(c *gin.Context) {
 	var query dto.PaginationQuery

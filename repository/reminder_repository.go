@@ -19,6 +19,7 @@ type ReminderRepository interface {
 	RescheduleJobs(ctx context.Context, bookingID uint, jobs []models.ReminderJob) error
 	FindDueJobs(ctx context.Context, now time.Time, limit int64) ([]models.ReminderJob, error)
 	UpdateStatus(ctx context.Context, id bson.ObjectID, status string, sentAt *time.Time, errMsg string) error
+	MarkInAppSent(ctx context.Context, id bson.ObjectID) error
 	IncrementRetry(ctx context.Context, id bson.ObjectID, errMsg string) error
 	CancelByBookingID(ctx context.Context, bookingID uint) error
 	FindAll(ctx context.Context, page, limit int, status string) ([]models.ReminderJob, int64, error)
@@ -100,25 +101,26 @@ func (r *reminderRepository) RescheduleJobs(ctx context.Context, bookingID uint,
 		}
 		types = append(types, job.ReminderType)
 		set := bson.M{
-			"booking_id":    bookingID,
-			"reminder_type": job.ReminderType,
-			"booking_code":  job.BookingCode,
-			"user_id":       job.UserID,
-			"user_name":     job.UserName,
-			"user_email":    job.UserEmail,
-			"user_phone":    job.UserPhone,
-			"field_id":      job.FieldID,
-			"field_name":    job.FieldName,
-			"booking_date":  job.BookingDate,
-			"start_time":    job.StartTime,
-			"end_time":      job.EndTime,
-			"play_time":     job.PlayTime,
-			"scheduled_for": job.ScheduledFor,
-			"status":        models.ReminderStatusScheduled,
-			"retry_count":   0,
-			"max_retries":   3,
-			"error_message": "",
-			"updated_at":    now,
+			"booking_id":           bookingID,
+			"reminder_type":        job.ReminderType,
+			"booking_code":         job.BookingCode,
+			"user_id":              job.UserID,
+			"user_name":            job.UserName,
+			"user_email":           job.UserEmail,
+			"user_phone":           job.UserPhone,
+			"user_whatsapp_opt_in": job.UserWhatsAppOptIn,
+			"field_id":             job.FieldID,
+			"field_name":           job.FieldName,
+			"booking_date":         job.BookingDate,
+			"start_time":           job.StartTime,
+			"end_time":             job.EndTime,
+			"play_time":            job.PlayTime,
+			"scheduled_for":        job.ScheduledFor,
+			"status":               models.ReminderStatusScheduled,
+			"retry_count":          0,
+			"max_retries":          3,
+			"error_message":        "",
+			"updated_at":           now,
 		}
 		filter := bson.M{
 			"booking_id":    bookingID,
@@ -200,6 +202,20 @@ func (r *reminderRepository) UpdateStatus(ctx context.Context, id bson.ObjectID,
 		return err
 	}
 	if res.MatchedCount == 0 {
+		return errors.New("reminder job not found")
+	}
+	return nil
+}
+
+func (r *reminderRepository) MarkInAppSent(ctx context.Context, id bson.ObjectID) error {
+	result, err := r.coll.UpdateByID(ctx, id, bson.M{"$set": bson.M{
+		"in_app_sent": true,
+		"updated_at":  time.Now(),
+	}})
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
 		return errors.New("reminder job not found")
 	}
 	return nil

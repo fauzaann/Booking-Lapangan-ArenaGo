@@ -67,6 +67,10 @@ export const api = {
   login: (payload) => request("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
   register: (payload) => request("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
   me: () => request("/me"),
+  updateNotificationPreferences: (payload) => request("/me/notification-preferences", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  }),
   fields: async (params = {}) => {
     const query = new URLSearchParams({ page: "1", limit: "50", status: "ACTIVE", ...params });
     const result = await request(`/fields?${query}`);
@@ -115,6 +119,10 @@ export const api = {
   markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: "PATCH" }),
   markAllNotificationsRead: () => request("/notifications/read-all", { method: "PATCH" }),
   adminReminders: (params = {}) => request(`/admin/reminders?${new URLSearchParams(params)}`),
+  publishVenueAnnouncement: (payload) => request("/admin/announcements", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }),
 };
 
 export function saveSession(auth) {

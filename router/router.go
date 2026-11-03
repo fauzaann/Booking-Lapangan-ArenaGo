@@ -71,6 +71,7 @@ func New(deps Dependencies) *gin.Engine {
 	}
 
 	v1.GET("/me", authenticated, deps.User.Profile)
+	v1.PATCH("/me/notification-preferences", authenticated, deps.User.UpdateNotificationPreferences)
 
 	// ---------- Fields (publik) ----------
 	fields := v1.Group("/fields")
@@ -153,6 +154,7 @@ func New(deps Dependencies) *gin.Engine {
 
 		if deps.Notification != nil {
 			admin.GET("/reminders", deps.Notification.AdminListReminders)
+			admin.POST("/announcements", deps.Notification.PublishVenueAnnouncement)
 		}
 	}
 

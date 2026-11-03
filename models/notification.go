@@ -17,8 +17,9 @@ const (
 
 // Tipe pengingat jadwal bermain.
 const (
-	ReminderTypeH24 = "H_24"
-	ReminderTypeH2  = "H_2"
+	ReminderTypeH24        = "H_24"
+	ReminderTypeH2         = "H_2"
+	ReminderTypePaymentDue = "PAYMENT_DUE"
 )
 
 // Tipe notifikasi inbox.
@@ -27,6 +28,8 @@ const (
 	NotificationTypeBookingConfirmed   = "BOOKING_CONFIRMED"
 	NotificationTypeBookingCancelled   = "BOOKING_CANCELLED"
 	NotificationTypeBookingRescheduled = "BOOKING_RESCHEDULED"
+	NotificationTypePaymentReminder    = "PAYMENT_REMINDER"
+	NotificationTypeVenueAnnouncement  = "VENUE_ANNOUNCEMENT"
 )
 
 // Channel notifikasi.
@@ -38,28 +41,33 @@ const (
 
 // ReminderJob merepresentasikan satu tugas pengingat jadwal bermain di MongoDB.
 type ReminderJob struct {
-	ID           bson.ObjectID `bson:"_id,omitempty" json:"id"`
-	BookingID    uint          `bson:"booking_id" json:"booking_id"`
-	BookingCode  string        `bson:"booking_code" json:"booking_code"`
-	UserID       uint          `bson:"user_id" json:"user_id"`
-	UserName     string        `bson:"user_name" json:"user_name"`
-	UserEmail    string        `bson:"user_email" json:"user_email"`
-	UserPhone    string        `bson:"user_phone" json:"user_phone"`
-	FieldID      uint          `bson:"field_id" json:"field_id"`
-	FieldName    string        `bson:"field_name" json:"field_name"`
-	BookingDate  time.Time     `bson:"booking_date" json:"booking_date"`
-	StartTime    string        `bson:"start_time" json:"start_time"`
-	EndTime      string        `bson:"end_time" json:"end_time"`
-	PlayTime     time.Time     `bson:"play_time" json:"play_time"`
-	ReminderType string        `bson:"reminder_type" json:"reminder_type"` // H_24, H_2
-	ScheduledFor time.Time     `bson:"scheduled_for" json:"scheduled_for"`
-	Status       string        `bson:"status" json:"status"` // SCHEDULED, PROCESSING, SENT, FAILED, CANCELLED
-	RetryCount   int           `bson:"retry_count" json:"retry_count"`
-	MaxRetries   int           `bson:"max_retries" json:"max_retries"`
-	SentAt       *time.Time    `bson:"sent_at,omitempty" json:"sent_at,omitempty"`
-	ErrorMessage string        `bson:"error_message,omitempty" json:"error_message,omitempty"`
-	CreatedAt    time.Time     `bson:"created_at" json:"created_at"`
-	UpdatedAt    time.Time     `bson:"updated_at" json:"updated_at"`
+	ID                bson.ObjectID `bson:"_id,omitempty" json:"id"`
+	BookingID         uint          `bson:"booking_id" json:"booking_id"`
+	BookingCode       string        `bson:"booking_code" json:"booking_code"`
+	UserID            uint          `bson:"user_id" json:"user_id"`
+	UserName          string        `bson:"user_name" json:"user_name"`
+	UserEmail         string        `bson:"user_email" json:"user_email"`
+	UserPhone         string        `bson:"user_phone" json:"user_phone"`
+	UserWhatsAppOptIn bool          `bson:"user_whatsapp_opt_in" json:"-"`
+	FieldID           uint          `bson:"field_id" json:"field_id"`
+	FieldName         string        `bson:"field_name" json:"field_name"`
+	BookingDate       time.Time     `bson:"booking_date" json:"booking_date"`
+	StartTime         string        `bson:"start_time" json:"start_time"`
+	EndTime           string        `bson:"end_time" json:"end_time"`
+	PlayTime          time.Time     `bson:"play_time" json:"play_time"`
+	ReminderType      string        `bson:"reminder_type" json:"reminder_type"` // H_24, H_2
+	PaymentURL        string        `bson:"payment_url,omitempty" json:"-"`
+	ExpiredAt         *time.Time    `bson:"expired_at,omitempty" json:"-"`
+	Amount            float64       `bson:"amount,omitempty" json:"-"`
+	InAppSent         bool          `bson:"in_app_sent" json:"-"`
+	ScheduledFor      time.Time     `bson:"scheduled_for" json:"scheduled_for"`
+	Status            string        `bson:"status" json:"status"` // SCHEDULED, PROCESSING, SENT, FAILED, CANCELLED
+	RetryCount        int           `bson:"retry_count" json:"retry_count"`
+	MaxRetries        int           `bson:"max_retries" json:"max_retries"`
+	SentAt            *time.Time    `bson:"sent_at,omitempty" json:"sent_at,omitempty"`
+	ErrorMessage      string        `bson:"error_message,omitempty" json:"error_message,omitempty"`
+	CreatedAt         time.Time     `bson:"created_at" json:"created_at"`
+	UpdatedAt         time.Time     `bson:"updated_at" json:"updated_at"`
 }
 
 // Notification merepresentasikan item notifikasi in-app pada kotak masuk pengguna.
