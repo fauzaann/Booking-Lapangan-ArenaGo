@@ -60,6 +60,7 @@ type preparedCheckoutItem struct {
 	date     time.Time
 	duration int
 	field    *models.Field
+	price    models.PlayingPrice
 	booking  *models.Booking
 	payment  *models.Payment
 }
@@ -179,7 +180,8 @@ func (c *checkoutController) Create(ctx context.Context, actor Actor, req dto.Ch
 				continue
 			}
 			item.field = field
-			total += field.PricePerHour * float64(item.duration)
+			item.price = models.CalculatePlayingPrice(field.PricePerHour, item.duration)
+			total += item.price.TotalPrice
 		}
 		if len(conflicts) > 0 {
 			return nil
@@ -199,9 +201,14 @@ func (c *checkoutController) Create(ctx context.Context, actor Actor, req dto.Ch
 				BookingCode: BuildBookingCode(timeNow(), sequence),
 				UserID:      actor.UserID, FieldID: item.field.ID, BookingDate: item.date,
 				StartTime: item.request.StartTime, EndTime: item.request.EndTime,
-				Duration: item.duration, TotalPrice: item.field.PricePerHour * float64(item.duration),
-				Status: models.BookingStatusPending,
-				Items:  buildBookingItems(item.request.StartTime, item.request.EndTime, item.field.PricePerHour),
+				Duration:        item.duration,
+				OriginalPrice:   item.price.OriginalPrice,
+				DiscountAmount:  item.price.DiscountAmount,
+				DiscountPercent: item.price.DiscountPercent,
+				PackageName:     item.price.PackageName,
+				TotalPrice:      item.price.TotalPrice,
+				Status:          models.BookingStatusPending,
+				Items:           buildBookingItems(item.request.StartTime, item.request.EndTime, item.price.TotalPrice),
 			}
 			if err := r.Booking().Create(ctx, booking); err != nil {
 				return err
@@ -233,10 +240,17 @@ func (c *checkoutController) Create(ctx context.Context, actor Actor, req dto.Ch
 			description.WriteString("; ")
 		}
 		description.WriteString(fmt.Sprintf("%s %s %s-%s", item.field.Name, item.date.Format(timeutil.DateLayout), item.request.StartTime, item.request.EndTime))
-		invoiceItems = append(invoiceItems, xendit.Item{
+		invoiceItem := xendit.Item{
 			Name:     fmt.Sprintf("%s (%d hour)", item.field.Name, item.duration),
 			Quantity: item.duration, Price: item.field.PricePerHour, Category: string(item.field.Type),
-		})
+		}
+		if item.price.DiscountAmount > 0 {
+			invoiceItem = xendit.Item{
+				Name:     fmt.Sprintf("%s - %s", item.field.Name, item.price.PackageName),
+				Quantity: 1, Price: item.price.TotalPrice, Category: string(item.field.Type),
+			}
+		}
+		invoiceItems = append(invoiceItems, invoiceItem)
 	}
 	successURL := appendCheckoutID(c.policy.SuccessRedirectURL, checkout.ID)
 	failureURL := appendCheckoutID(c.policy.FailureRedirectURL, checkout.ID)

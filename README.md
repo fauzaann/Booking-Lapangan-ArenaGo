@@ -208,12 +208,15 @@ booking-field/
 | `users` | id, name, email (unique), password (bcrypt), phone, role, timestamps |
 | `fields` | id, name, description, type, location, price_per_hour, facilities, status, deleted_at |
 | `schedules` | id, field_id, day, open_time, close_time, is_closed — unique (field_id, day) |
-| `bookings` | id, booking_code (unique), user_id, field_id, booking_date, start_time, end_time, duration, total_price, status, notes, cancelled_at, check_in_token (unique), checked_in_at, checked_in_by |
+| `bookings` | id, booking_code (unique), user_id, field_id, booking_date, start_time, end_time, duration, original_price, discount_amount, discount_percent, package_name, total_price, status, notes, cancelled_at, check_in_token (unique), checked_in_at, checked_in_by |
+| `playing_packages` | id, name, minimum_duration, discount_percent, is_active |
 | `ratings` | id, booking_id (unique), user_id, field_id, rating (1–5), review (maks. 1.000 karakter), is_visible |
 | `booking_items` | id, booking_id, start_time, end_time, price (rincian per jam) |
 | `payments` | id, booking_id (unique), external_id (unique), invoice_id, invoice_url, amount, payment_method, payment_channel, status, paid_at, expired_at |
 
 Relasi: `users 1—N bookings`, `fields 1—N bookings`, `fields 1—N schedules`, `bookings 1—N booking_items`, `bookings 1—1 payments`.
+
+Harga paket saat ini: 2 jam mendapat diskon 5%; 3 jam atau lebih mendapat diskon 10%. API mengembalikan `original_price`, `discount_amount`, `discount_percent`, `package_name`, dan `total_price`. Nilai diskon dihitung server-side dan tagihan Xendit menggunakan total setelah diskon.
 
 Jam disimpan sebagai string `"HH:MM"` 24 jam agar perbandingan leksikografis di SQL identik dengan perbandingan kronologis.
 
@@ -415,7 +418,9 @@ Server: cek lapangan aktif + jam berada dalam jadwal operasional
 BEGIN TRANSACTION
    advisory lock (field_id + tanggal)
    cek overlap slot          → bentrok? 409 Conflict
-   hitung durasi & harga     (price_per_hour × durasi)
+   hitung harga normal       (price_per_hour × durasi)
+   diskon paket              (2 jam: 5%; 3 jam atau lebih: 10%)
+   total bayar               (harga normal − diskon)
    generate booking_code     BK-YYYYMMDD-XXXX
    insert booking + booking_items
    insert payment (PENDING)
@@ -584,7 +589,11 @@ curl -X POST http://localhost:8080/api/v1/bookings \
     "start_time": "10:00",
     "end_time": "12:00",
     "duration": 2,
-    "total_price": 300000,
+    "original_price": 400000,
+    "discount_amount": 20000,
+    "discount_percent": 5,
+    "package_name": "Paket 2 Jam",
+    "total_price": 380000,
     "booking_status": "WAITING_PAYMENT",
     "payment_url": "https://checkout.xendit.co/web/...",
     "payment_status": "PENDING",

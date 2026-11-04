@@ -79,6 +79,10 @@ type BookingResponse struct {
 	StartTime            string                         `json:"start_time"`
 	EndTime              string                         `json:"end_time"`
 	Duration             int                            `json:"duration"`
+	OriginalPrice        float64                        `json:"original_price"`
+	DiscountAmount       float64                        `json:"discount_amount"`
+	DiscountPercent      float64                        `json:"discount_percent"`
+	PackageName          string                         `json:"package_name,omitempty"`
 	TotalPrice           float64                        `json:"total_price"`
 	Status               string                         `json:"status"`
 	Notes                string                         `json:"notes,omitempty"`
@@ -94,18 +98,22 @@ type BookingResponse struct {
 
 // BookingCreatedResponse adalah response ringkas setelah booking dibuat.
 type BookingCreatedResponse struct {
-	BookingID     uint       `json:"booking_id"`
-	BookingCode   string     `json:"booking_code"`
-	FieldName     string     `json:"field_name"`
-	BookingDate   string     `json:"booking_date"`
-	StartTime     string     `json:"start_time"`
-	EndTime       string     `json:"end_time"`
-	Duration      int        `json:"duration"`
-	TotalPrice    float64    `json:"total_price"`
-	BookingStatus string     `json:"booking_status"`
-	PaymentURL    string     `json:"payment_url"`
-	PaymentStatus string     `json:"payment_status"`
-	ExpiredAt     *time.Time `json:"expired_at,omitempty"`
+	BookingID       uint       `json:"booking_id"`
+	BookingCode     string     `json:"booking_code"`
+	FieldName       string     `json:"field_name"`
+	BookingDate     string     `json:"booking_date"`
+	StartTime       string     `json:"start_time"`
+	EndTime         string     `json:"end_time"`
+	Duration        int        `json:"duration"`
+	OriginalPrice   float64    `json:"original_price"`
+	DiscountAmount  float64    `json:"discount_amount"`
+	DiscountPercent float64    `json:"discount_percent"`
+	PackageName     string     `json:"package_name,omitempty"`
+	TotalPrice      float64    `json:"total_price"`
+	BookingStatus   string     `json:"booking_status"`
+	PaymentURL      string     `json:"payment_url"`
+	PaymentStatus   string     `json:"payment_status"`
+	ExpiredAt       *time.Time `json:"expired_at,omitempty"`
 }
 
 type CheckoutCreatedResponse struct {
@@ -130,6 +138,10 @@ type CheckoutResponse struct {
 
 // NewBookingResponse memetakan model booking menjadi response.
 func NewBookingResponse(booking models.Booking) BookingResponse {
+	originalPrice := booking.OriginalPrice
+	if originalPrice == 0 && booking.DiscountAmount == 0 {
+		originalPrice = booking.TotalPrice
+	}
 	response := BookingResponse{
 		ID:                   booking.ID,
 		BookingCode:          booking.BookingCode,
@@ -139,6 +151,10 @@ func NewBookingResponse(booking models.Booking) BookingResponse {
 		StartTime:            booking.StartTime,
 		EndTime:              booking.EndTime,
 		Duration:             booking.Duration,
+		OriginalPrice:        originalPrice,
+		DiscountAmount:       booking.DiscountAmount,
+		DiscountPercent:      booking.DiscountPercent,
+		PackageName:          booking.PackageName,
 		TotalPrice:           booking.TotalPrice,
 		Status:               string(booking.Status),
 		Notes:                booking.Notes,

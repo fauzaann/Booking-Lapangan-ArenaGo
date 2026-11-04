@@ -58,6 +58,10 @@ type Booking struct {
 	StartTime            string                  `gorm:"type:varchar(5);not null" json:"start_time"`
 	EndTime              string                  `gorm:"type:varchar(5);not null" json:"end_time"`
 	Duration             int                     `gorm:"not null" json:"duration"`
+	OriginalPrice        float64                 `gorm:"type:numeric(12,2);not null;default:0" json:"original_price"`
+	DiscountAmount       float64                 `gorm:"type:numeric(12,2);not null;default:0" json:"discount_amount"`
+	DiscountPercent      float64                 `gorm:"type:numeric(5,2);not null;default:0" json:"discount_percent"`
+	PackageName          string                  `gorm:"type:varchar(100);not null;default:''" json:"package_name"`
 	TotalPrice           float64                 `gorm:"type:numeric(12,2);not null" json:"total_price"`
 	Status               BookingStatus           `gorm:"type:varchar(20);not null;index" json:"status"`
 	Notes                string                  `gorm:"type:text" json:"notes"`

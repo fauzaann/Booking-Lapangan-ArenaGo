@@ -126,8 +126,9 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 		return nil, apperror.Unprocessable("start_time has already passed")
 	}
 
-	// Total harga SELALU dihitung backend, tidak pernah diterima dari client.
-	totalPrice := field.PricePerHour * float64(duration)
+	// Total harga dan diskon selalu dihitung backend, tidak pernah diterima dari client.
+	price := models.CalculatePlayingPrice(field.PricePerHour, duration)
+	totalPrice := price.TotalPrice
 
 	var (
 		booking *models.Booking
@@ -155,17 +156,21 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 		}
 
 		booking = &models.Booking{
-			BookingCode: BuildBookingCode(timeNow(), sequence),
-			UserID:      actor.UserID,
-			FieldID:     field.ID,
-			BookingDate: bookingDate,
-			StartTime:   req.StartTime,
-			EndTime:     req.EndTime,
-			Duration:    duration,
-			TotalPrice:  totalPrice,
-			Status:      models.BookingStatusPending,
-			Notes:       strings.TrimSpace(req.Notes),
-			Items:       buildBookingItems(req.StartTime, req.EndTime, field.PricePerHour),
+			BookingCode:     BuildBookingCode(timeNow(), sequence),
+			UserID:          actor.UserID,
+			FieldID:         field.ID,
+			BookingDate:     bookingDate,
+			StartTime:       req.StartTime,
+			EndTime:         req.EndTime,
+			Duration:        duration,
+			OriginalPrice:   price.OriginalPrice,
+			DiscountAmount:  price.DiscountAmount,
+			DiscountPercent: price.DiscountPercent,
+			PackageName:     price.PackageName,
+			TotalPrice:      totalPrice,
+			Status:          models.BookingStatusPending,
+			Notes:           strings.TrimSpace(req.Notes),
+			Items:           buildBookingItems(req.StartTime, req.EndTime, totalPrice),
 		}
 		if createErr := r.Booking().Create(ctx, booking); createErr != nil {
 			return createErr
@@ -201,19 +206,28 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 		failureURL = fmt.Sprintf("%s%sbooking_id=%d&booking_code=%s", failureURL, sep, booking.ID, booking.BookingCode)
 	}
 
-	invoice, err := c.invoices.CreateInvoice(ctx, xendit.CreateInvoiceRequest{
-		ExternalID:      booking.BookingCode,
-		Amount:          totalPrice,
-		Description:     fmt.Sprintf("Booking %s - %s (%s %s-%s)", booking.BookingCode, field.Name, req.BookingDate, req.StartTime, req.EndTime),
-		InvoiceDuration: c.policy.InvoiceDuration,
-		PayerEmail:      actor.Email,
-		Customer:        &xendit.Customer{Email: actor.Email},
-		Items: []xendit.Item{{
-			Name:     fmt.Sprintf("%s (%d hour)", field.Name, duration),
-			Quantity: duration,
-			Price:    field.PricePerHour,
+	invoiceItem := xendit.Item{
+		Name:     fmt.Sprintf("%s (%d hour)", field.Name, duration),
+		Quantity: duration,
+		Price:    field.PricePerHour,
+		Category: string(field.Type),
+	}
+	if price.DiscountAmount > 0 {
+		invoiceItem = xendit.Item{
+			Name:     fmt.Sprintf("%s - %s", field.Name, price.PackageName),
+			Quantity: 1,
+			Price:    totalPrice,
 			Category: string(field.Type),
-		}},
+		}
+	}
+	invoice, err := c.invoices.CreateInvoice(ctx, xendit.CreateInvoiceRequest{
+		ExternalID:         booking.BookingCode,
+		Amount:             totalPrice,
+		Description:        fmt.Sprintf("Booking %s - %s (%s %s-%s)", booking.BookingCode, field.Name, req.BookingDate, req.StartTime, req.EndTime),
+		InvoiceDuration:    c.policy.InvoiceDuration,
+		PayerEmail:         actor.Email,
+		Customer:           &xendit.Customer{Email: actor.Email},
+		Items:              []xendit.Item{invoiceItem},
 		SuccessRedirectURL: successURL,
 		FailureRedirectURL: failureURL,
 	})
@@ -249,18 +263,22 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 	}
 
 	return &dto.BookingCreatedResponse{
-		BookingID:     booking.ID,
-		BookingCode:   booking.BookingCode,
-		FieldName:     field.Name,
-		BookingDate:   booking.BookingDate.Format(timeutil.DateLayout),
-		StartTime:     booking.StartTime,
-		EndTime:       booking.EndTime,
-		Duration:      booking.Duration,
-		TotalPrice:    booking.TotalPrice,
-		BookingStatus: string(booking.Status),
-		PaymentURL:    payment.InvoiceURL,
-		PaymentStatus: string(payment.Status),
-		ExpiredAt:     payment.ExpiredAt,
+		BookingID:       booking.ID,
+		BookingCode:     booking.BookingCode,
+		FieldName:       field.Name,
+		BookingDate:     booking.BookingDate.Format(timeutil.DateLayout),
+		StartTime:       booking.StartTime,
+		EndTime:         booking.EndTime,
+		Duration:        booking.Duration,
+		OriginalPrice:   price.OriginalPrice,
+		DiscountAmount:  price.DiscountAmount,
+		DiscountPercent: price.DiscountPercent,
+		PackageName:     price.PackageName,
+		TotalPrice:      booking.TotalPrice,
+		BookingStatus:   string(booking.Status),
+		PaymentURL:      payment.InvoiceURL,
+		PaymentStatus:   string(payment.Status),
+		ExpiredAt:       payment.ExpiredAt,
 	}, nil
 }
 
@@ -466,7 +484,15 @@ func (c *bookingController) Reschedule(ctx context.Context, actor Actor, id uint
 				"booking time must be within operating hours %s-%s", schedule.OpenTime, schedule.CloseTime))
 		}
 
-		newTotal := field.PricePerHour * float64(duration)
+		price := models.CalculatePlayingPrice(field.PricePerHour, duration)
+		if locked.OriginalPrice == 0 && locked.DiscountAmount == 0 {
+			// Keep legacy bookings at their original undiscounted pricing.
+			price = models.PlayingPrice{
+				OriginalPrice: price.OriginalPrice,
+				TotalPrice:    price.OriginalPrice,
+			}
+		}
+		newTotal := price.TotalPrice
 		if math.Abs(newTotal-locked.TotalPrice) > 0.01 {
 			return apperror.Conflict(fmt.Sprintf(
 				"reschedule would change the total from %.2f to %.2f; payment adjustment is not supported",
@@ -506,7 +532,11 @@ func (c *bookingController) Reschedule(ctx context.Context, actor Actor, id uint
 		locked.StartTime = req.StartTime
 		locked.EndTime = req.EndTime
 		locked.Duration = duration
-		locked.Items = buildBookingItems(req.StartTime, req.EndTime, field.PricePerHour)
+		locked.OriginalPrice = price.OriginalPrice
+		locked.DiscountAmount = price.DiscountAmount
+		locked.DiscountPercent = price.DiscountPercent
+		locked.PackageName = price.PackageName
+		locked.Items = buildBookingItems(req.StartTime, req.EndTime, newTotal)
 		locked.Field = field
 		if err := r.Booking().UpdateSchedule(ctx, locked); err != nil {
 			return err
@@ -707,16 +737,27 @@ func BuildBookingCode(now time.Time, sequence int) string {
 	return fmt.Sprintf("BK-%s-%04d", now.Format("20060102"), sequence)
 }
 
-// buildBookingItems membuat item harga untuk setiap slot satu jam.
-func buildBookingItems(start, end string, pricePerHour float64) []models.BookingItem {
+// buildBookingItems distributes the booking total evenly across hourly slots.
+func buildBookingItems(start, end string, totalPrice float64) []models.BookingItem {
 	slots := timeutil.HourlySlots(start, end)
 	items := make([]models.BookingItem, 0, len(slots))
-	for _, slot := range slots {
+	if len(slots) == 0 {
+		return items
+	}
+
+	slotPrice := math.Round((totalPrice/float64(len(slots)))*100) / 100
+	var allocated float64
+	for i, slot := range slots {
+		price := slotPrice
+		if i == len(slots)-1 {
+			price = math.Round((totalPrice-allocated)*100) / 100
+		}
 		items = append(items, models.BookingItem{
 			StartTime: slot[0],
 			EndTime:   slot[1],
-			Price:     pricePerHour,
+			Price:     price,
 		})
+		allocated += price
 	}
 	return items
 }
