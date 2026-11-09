@@ -3,6 +3,7 @@ package dto
 import (
 	"time"
 
+	"Booking-Lapangan/internal/booking"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/timeutil"
 )
@@ -70,30 +71,40 @@ type BookingItemResponse struct {
 
 // BookingResponse adalah representasi booking untuk client.
 type BookingResponse struct {
-	ID                   uint                           `json:"id"`
-	BookingCode          string                         `json:"booking_code"`
-	UserID               uint                           `json:"user_id"`
-	FieldID              uint                           `json:"field_id"`
-	FieldName            string                         `json:"field_name,omitempty"`
-	BookingDate          string                         `json:"booking_date"`
-	StartTime            string                         `json:"start_time"`
-	EndTime              string                         `json:"end_time"`
-	Duration             int                            `json:"duration"`
-	OriginalPrice        float64                        `json:"original_price"`
-	DiscountAmount       float64                        `json:"discount_amount"`
-	DiscountPercent      float64                        `json:"discount_percent"`
-	PackageName          string                         `json:"package_name,omitempty"`
-	TotalPrice           float64                        `json:"total_price"`
-	Status               string                         `json:"status"`
-	Notes                string                         `json:"notes,omitempty"`
-	CancellationReason   string                         `json:"cancellation_reason,omitempty"`
-	RefundReviewRequired bool                           `json:"refund_review_required"`
-	RescheduleHistory    []models.BookingScheduleChange `json:"reschedule_history,omitempty"`
-	CheckInToken         string                         `json:"check_in_token,omitempty"`
-	CheckedInAt          *time.Time                     `json:"checked_in_at,omitempty"`
-	Items                []BookingItemResponse          `json:"items,omitempty"`
-	Payment              *PaymentResponse               `json:"payment,omitempty"`
-	CreatedAt            time.Time                      `json:"created_at"`
+	ID                   uint                            `json:"id"`
+	BookingCode          string                          `json:"booking_code"`
+	UserID               uint                            `json:"user_id"`
+	FieldID              uint                            `json:"field_id"`
+	FieldName            string                          `json:"field_name,omitempty"`
+	BookingDate          string                          `json:"booking_date"`
+	StartTime            string                          `json:"start_time"`
+	EndTime              string                          `json:"end_time"`
+	Duration             int                             `json:"duration"`
+	OriginalPrice        float64                         `json:"original_price"`
+	DiscountAmount       float64                         `json:"discount_amount"`
+	DiscountPercent      float64                         `json:"discount_percent"`
+	PackageName          string                          `json:"package_name,omitempty"`
+	TotalPrice           float64                         `json:"total_price"`
+	Status               string                          `json:"status"`
+	Notes                string                          `json:"notes,omitempty"`
+	CancellationReason   string                          `json:"cancellation_reason,omitempty"`
+	RefundReviewRequired bool                            `json:"refund_review_required"`
+	RescheduleHistory    []BookingScheduleChangeResponse `json:"reschedule_history,omitempty"`
+	CheckInToken         string                          `json:"check_in_token,omitempty"`
+	CheckedInAt          *time.Time                      `json:"checked_in_at,omitempty"`
+	Items                []BookingItemResponse           `json:"items,omitempty"`
+	Payment              *PaymentResponse                `json:"payment,omitempty"`
+	CreatedAt            time.Time                       `json:"created_at"`
+}
+
+type BookingScheduleChangeResponse struct {
+	PreviousDate      string    `json:"previous_date"`
+	PreviousStartTime string    `json:"previous_start_time"`
+	PreviousEndTime   string    `json:"previous_end_time"`
+	NewDate           string    `json:"new_date"`
+	NewStartTime      string    `json:"new_start_time"`
+	NewEndTime        string    `json:"new_end_time"`
+	ChangedAt         time.Time `json:"changed_at"`
 }
 
 // BookingCreatedResponse adalah response ringkas setelah booking dibuat.
@@ -160,8 +171,18 @@ func NewBookingResponse(booking models.Booking) BookingResponse {
 		Notes:                booking.Notes,
 		CancellationReason:   booking.CancellationReason,
 		RefundReviewRequired: booking.RefundReviewRequired,
-		RescheduleHistory:    booking.RescheduleHistory,
 		CreatedAt:            booking.CreatedAt,
+	}
+	for _, change := range booking.RescheduleHistory {
+		response.RescheduleHistory = append(response.RescheduleHistory, BookingScheduleChangeResponse{
+			PreviousDate:      change.PreviousDate,
+			PreviousStartTime: change.PreviousStartTime,
+			PreviousEndTime:   change.PreviousEndTime,
+			NewDate:           change.NewDate,
+			NewStartTime:      change.NewStartTime,
+			NewEndTime:        change.NewEndTime,
+			ChangedAt:         change.ChangedAt,
+		})
 	}
 
 	if booking.Field != nil {
@@ -191,11 +212,87 @@ func NewBookingResponse(booking models.Booking) BookingResponse {
 	return response
 }
 
+func NewBookingReadResponse(model booking.ReadModel) BookingResponse {
+	response := BookingResponse{
+		ID:                   model.ID,
+		BookingCode:          model.BookingCode,
+		UserID:               model.UserID,
+		FieldID:              model.FieldID,
+		FieldName:            model.FieldName,
+		BookingDate:          model.BookingDate.Format(timeutil.DateLayout),
+		StartTime:            model.StartTime,
+		EndTime:              model.EndTime,
+		Duration:             model.Duration,
+		OriginalPrice:        model.OriginalPrice,
+		DiscountAmount:       model.DiscountAmount,
+		DiscountPercent:      model.DiscountPercent,
+		PackageName:          model.PackageName,
+		TotalPrice:           model.TotalPrice,
+		Status:               model.Status,
+		Notes:                model.Notes,
+		CancellationReason:   model.CancellationReason,
+		RefundReviewRequired: model.RefundReviewRequired,
+		CreatedAt:            model.CreatedAt,
+	}
+	if model.OriginalPrice == 0 && model.DiscountAmount == 0 {
+		response.OriginalPrice = model.TotalPrice
+	}
+	for _, change := range model.RescheduleHistory {
+		response.RescheduleHistory = append(response.RescheduleHistory, BookingScheduleChangeResponse{
+			PreviousDate:      change.PreviousDate,
+			PreviousStartTime: change.PreviousStartTime,
+			PreviousEndTime:   change.PreviousEndTime,
+			NewDate:           change.NewDate,
+			NewStartTime:      change.NewStartTime,
+			NewEndTime:        change.NewEndTime,
+			ChangedAt:         change.ChangedAt,
+		})
+	}
+	for _, item := range model.Items {
+		response.Items = append(response.Items, BookingItemResponse{
+			StartTime: item.StartTime,
+			EndTime:   item.EndTime,
+			Price:     item.Price,
+		})
+	}
+	if model.Payment != nil {
+		response.Payment = &PaymentResponse{
+			ID:             model.Payment.ID,
+			BookingID:      model.Payment.BookingID,
+			ExternalID:     model.Payment.ExternalID,
+			InvoiceID:      model.Payment.InvoiceID,
+			InvoiceURL:     model.Payment.InvoiceURL,
+			Amount:         model.Payment.Amount,
+			PaymentMethod:  model.Payment.PaymentMethod,
+			PaymentChannel: model.Payment.PaymentChannel,
+			Status:         model.Payment.Status,
+			PaidAt:         model.Payment.PaidAt,
+			ExpiredAt:      model.Payment.ExpiredAt,
+			CreatedAt:      model.Payment.CreatedAt,
+		}
+		if model.Status == string(models.BookingStatusConfirmed) &&
+			model.Payment.Status == string(models.PaymentStatusPaid) &&
+			model.CheckInToken != nil {
+			response.CheckInToken = *model.CheckInToken
+			response.CheckedInAt = model.CheckedInAt
+		}
+	}
+	return response
+}
+
 // NewBookingResponses memetakan daftar booking menjadi daftar response.
 func NewBookingResponses(bookings []models.Booking) []BookingResponse {
 	result := make([]BookingResponse, 0, len(bookings))
 	for _, booking := range bookings {
 		result = append(result, NewBookingResponse(booking))
+	}
+	return result
+}
+
+func NewBookingReadResponses(bookings []booking.ReadModel) []BookingResponse {
+	result := make([]BookingResponse, 0, len(bookings))
+	for _, model := range bookings {
+		result = append(result, NewBookingReadResponse(model))
 	}
 	return result
 }

@@ -149,7 +149,8 @@ func main() {
 	fieldCache := fieldcache.New(redisClient, cfg.Redis.CacheTTL)
 	fieldController := controllers.NewFieldController(uow, fieldCache)
 	ratingController := controllers.NewRatingController(uow, fieldCache)
-	bookingController := controllers.NewBookingController(uow, invoices, controllers.BookingPolicy{
+	bookingReads := repository.NewBookingReadRepository(uow.Booking())
+	bookingController := controllers.NewBookingController(uow, bookingReads, invoices, controllers.BookingPolicy{
 		MinHours:           cfg.Booking.MinHours,
 		MaxHours:           cfg.Booking.MaxHours,
 		CancelMinHours:     cfg.Booking.CancelMinHours,

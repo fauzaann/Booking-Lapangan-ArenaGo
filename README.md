@@ -152,7 +152,7 @@ Router  ──► Middleware (CORS → Logger → Recovery → JWT → Role)
    ↓
 Handler        (parsing request, validasi payload, menulis response)
    ↓
-Controller     (business logic; tidak tahu HTTP maupun GORM)
+Controller     (business logic; tidak tahu HTTP; akses data melalui kontrak repository)
    ├──► Redis cache (daftar/detail lapangan; cache-aside)
    └──► Repository (interface + implementasi GORM) ──► PostgreSQL
 ```
@@ -168,7 +168,8 @@ Handler → Controller → Xendit Service (pkg/xendit) → Xendit API
 Prinsip yang dijaga:
 
 - Handler **tidak pernah** melakukan query database atau memanggil Xendit langsung.
-- Controller hanya bergantung pada **interface** (`repository.UnitOfWork`, `xendit.InvoiceService`) sehingga mudah di-mock.
+- Controller bergantung pada **interface** (`repository.UnitOfWork`, `xendit.InvoiceService`) sehingga mudah di-mock. Alur baca daftar/detail booking menggunakan kontrak `internal/booking.ReadRepository`; adapter repository menerjemahkan entity GORM ke read model tanpa relasi database.
+- Pemisahan booking masih bertahap: alur tulis dan transaksi booking tetap menggunakan `UnitOfWork` dan model database. Tidak ada service atau database baru pada tahap ini.
 - Seluruh dependency dirakit di `main.go` (dependency injection), bukan lewat global variable.
 
 ## Struktur Folder
@@ -178,6 +179,7 @@ booking-field/
 ├── main.go                     # entrypoint + dependency injection + graceful shutdown
 ├── config/                     # env, koneksi database, client Xendit
 ├── database/                   # migration & seeder
+├── internal/booking/           # kontrak/read model booking tanpa GORM
 ├── models/                     # entity GORM
 ├── dto/                        # request/response API (model DB tidak pernah dikirim langsung)
 ├── repository/                 # interface + implementasi GORM, UnitOfWork (transaksi)

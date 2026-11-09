@@ -185,9 +185,11 @@ func newMutationController(bookings ...*models.Booking) (controllers.BookingCont
 		}},
 		payment: &testPaymentRepo{},
 	}
-	controller := controllers.NewBookingController(uow, nil, controllers.BookingPolicy{
-		MinHours: 1, MaxHours: 8, CancelMinHours: 24,
-	})
+	controller := controllers.NewBookingController(
+		uow, repository.NewBookingReadRepository(uow.Booking()), nil, controllers.BookingPolicy{
+			MinHours: 1, MaxHours: 8, CancelMinHours: 24,
+		},
+	)
 	return controller, uow
 }
 

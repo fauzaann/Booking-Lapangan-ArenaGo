@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"Booking-Lapangan/dto"
+	"Booking-Lapangan/internal/booking"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/timeutil"
@@ -43,13 +44,19 @@ type BookingController interface {
 
 type bookingController struct {
 	uow      repository.UnitOfWork
+	reads    booking.ReadRepository
 	invoices xendit.InvoiceService
 	policy   BookingPolicy
 	notif    NotificationController
 }
 
 // NewBookingController membuat BookingController.
-func NewBookingController(uow repository.UnitOfWork, invoices xendit.InvoiceService, policy BookingPolicy) BookingController {
+func NewBookingController(
+	uow repository.UnitOfWork,
+	reads booking.ReadRepository,
+	invoices xendit.InvoiceService,
+	policy BookingPolicy,
+) BookingController {
 	if policy.MinHours < 1 {
 		policy.MinHours = 1
 	}
@@ -59,7 +66,12 @@ func NewBookingController(uow repository.UnitOfWork, invoices xendit.InvoiceServ
 	if policy.InvoiceDuration <= 0 {
 		policy.InvoiceDuration = 3600
 	}
-	return &bookingController{uow: uow, invoices: invoices, policy: policy}
+	return &bookingController{
+		uow:      uow,
+		reads:    reads,
+		invoices: invoices,
+		policy:   policy,
+	}
 }
 
 // SetNotificationController menyambungkan controller notifikasi.
@@ -300,10 +312,11 @@ func paymentInvoiceError(err error) *apperror.AppError {
 func (c *bookingController) List(ctx context.Context, actor Actor, query dto.BookingFilterQuery) ([]dto.BookingResponse, int64, error) {
 	query.PaginationQuery = query.PaginationQuery.Normalize()
 
-	filter := repository.BookingFilter{
-		ListParams: repository.ListParams{Page: query.Page, Limit: query.Limit},
-		FieldID:    query.FieldID,
-		Status:     strings.ToUpper(strings.TrimSpace(query.Status)),
+	filter := booking.ReadFilter{
+		Page:    query.Page,
+		Limit:   query.Limit,
+		FieldID: query.FieldID,
+		Status:  strings.ToUpper(strings.TrimSpace(query.Status)),
 	}
 
 	// User biasa hanya boleh melihat booking miliknya sendiri, apa pun isi query.
@@ -329,23 +342,23 @@ func (c *bookingController) List(ctx context.Context, actor Actor, query dto.Boo
 		filter.DateTo = &to
 	}
 
-	bookings, total, err := c.uow.Booking().FindAll(ctx, filter)
+	bookings, total, err := c.reads.List(ctx, filter)
 	if err != nil {
 		return nil, 0, err
 	}
-	return dto.NewBookingResponses(bookings), total, nil
+	return dto.NewBookingReadResponses(bookings), total, nil
 }
 
 // Detail mengambil detail booking setelah pemeriksaan kepemilikan.
 func (c *bookingController) Detail(ctx context.Context, actor Actor, id uint) (*dto.BookingResponse, error) {
-	booking, err := c.uow.Booking().FindDetailByID(ctx, id)
+	model, err := c.reads.FindDetail(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureBookingOwner(actor, booking); err != nil {
+	if err := ensureBookingOwnerID(actor, model.UserID); err != nil {
 		return nil, err
 	}
-	response := dto.NewBookingResponse(*booking)
+	response := dto.NewBookingReadResponse(*model)
 	return &response, nil
 }
 
@@ -725,7 +738,11 @@ func (c *bookingController) rollbackBooking(ctx context.Context, booking *models
 
 // ensureBookingOwner memastikan actor boleh mengakses booking tertentu.
 func ensureBookingOwner(actor Actor, booking *models.Booking) error {
-	if actor.IsAdmin() || booking.UserID == actor.UserID {
+	return ensureBookingOwnerID(actor, booking.UserID)
+}
+
+func ensureBookingOwnerID(actor Actor, userID uint) error {
+	if actor.IsAdmin() || userID == actor.UserID {
 		return nil
 	}
 	// 404 dipilih agar keberadaan booking milik orang lain tidak bocor.

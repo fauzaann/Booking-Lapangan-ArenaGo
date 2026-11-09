@@ -107,9 +107,12 @@ func TestPostgresConcurrentReschedulesCannotTakeSameSlot(t *testing.T) {
 		}
 	}
 
-	controller := controllers.NewBookingController(repository.NewUnitOfWork(scopedDB), nil, controllers.BookingPolicy{
-		MinHours: 1, MaxHours: 8, CancelMinHours: 24,
-	})
+	uow := repository.NewUnitOfWork(scopedDB)
+	controller := controllers.NewBookingController(
+		uow, repository.NewBookingReadRepository(uow.Booking()), nil, controllers.BookingPolicy{
+			MinHours: 1, MaxHours: 8, CancelMinHours: 24,
+		},
+	)
 	req := dto.RescheduleBookingRequest{
 		BookingDate: date.Format(timeutil.DateLayout), StartTime: "14:00", EndTime: "15:00",
 	}
