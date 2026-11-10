@@ -17,6 +17,7 @@ type paymentMockUOW struct {
 	bookingRepo  repository.BookingRepository
 	checkoutRepo repository.CheckoutRepository
 	auditLogRepo repository.AuditLogRepository
+	outboxRepo   repository.NotificationOutboxRepository
 }
 
 func (m *paymentMockUOW) User() repository.UserRepository         { return nil }
@@ -32,8 +33,31 @@ func (m *paymentMockUOW) Checkout() repository.CheckoutRepository {
 	return &testCheckoutRepo{}
 }
 func (m *paymentMockUOW) AuditLog() repository.AuditLogRepository { return m.auditLogRepo }
+func (m *paymentMockUOW) NotificationOutbox() repository.NotificationOutboxRepository {
+	if m.outboxRepo != nil {
+		return m.outboxRepo
+	}
+	m.outboxRepo = &testOutboxRepo{}
+	return m.outboxRepo
+}
 func (m *paymentMockUOW) Atomic(ctx context.Context, fn func(r repository.Registry) error) error {
 	return fn(m)
+}
+
+type testOutboxRepo struct {
+	events []models.NotificationEvent
+}
+
+func (r *testOutboxRepo) Create(_ context.Context, event *models.NotificationEvent) error {
+	r.events = append(r.events, *event)
+	return nil
+}
+func (r *testOutboxRepo) ClaimPending(context.Context, time.Time, int) ([]models.NotificationEvent, error) {
+	return nil, nil
+}
+func (r *testOutboxRepo) MarkProcessed(context.Context, uint, time.Time) error { return nil }
+func (r *testOutboxRepo) Retry(context.Context, models.NotificationEvent, error, time.Time) error {
+	return nil
 }
 
 type testPaymentRepo struct {
@@ -318,6 +342,10 @@ func TestPaymentController_SyncPaymentStatus_Success(t *testing.T) {
 	if bookingRepo.updatedWith.CheckInToken == nil || len(*bookingRepo.updatedWith.CheckInToken) < 32 {
 		t.Error("expected a secure check-in token to be issued after payment")
 	}
+	if len(uow.outboxRepo.(*testOutboxRepo).events) != 1 ||
+		uow.outboxRepo.(*testOutboxRepo).events[0].EventType != models.NotificationEventBookingConfirmed {
+		t.Fatalf("payment confirmation did not enqueue its notification event: %+v", uow.outboxRepo)
+	}
 }
 
 func TestPaymentController_SyncPaymentStatus_StillPending(t *testing.T) {
@@ -407,9 +435,15 @@ func TestPaymentController_HandleWebhook_ConfirmsWholeCheckout(t *testing.T) {
 			t.Errorf("booking %d has no secure check-in token", booking.ID)
 		}
 	}
+	if len(uow.outboxRepo.(*testOutboxRepo).events) != 2 {
+		t.Fatalf("expected one confirmation event per checkout booking, got %+v", uow.outboxRepo.(*testOutboxRepo).events)
+	}
 
 	if err := controller.HandleWebhook(context.Background(), "valid-token", payload); err != nil {
 		t.Fatalf("duplicate HandleWebhook() error = %v", err)
+	}
+	if len(uow.outboxRepo.(*testOutboxRepo).events) != 2 {
+		t.Fatalf("duplicate webhook created duplicate outbox events: %+v", uow.outboxRepo.(*testOutboxRepo).events)
 	}
 }
 

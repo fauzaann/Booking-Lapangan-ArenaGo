@@ -6,6 +6,36 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+const (
+	NotificationEventBookingConfirmed    = "BOOKING_CONFIRMED"
+	NotificationEventBookingCancelled    = "BOOKING_CANCELLED"
+	NotificationEventBookingRescheduled  = "BOOKING_RESCHEDULED"
+	NotificationEventPaymentInvoiceReady = "PAYMENT_INVOICE_READY"
+
+	NotificationEventPending    = "PENDING"
+	NotificationEventProcessing = "PROCESSING"
+	NotificationEventProcessed  = "PROCESSED"
+	NotificationEventFailed     = "FAILED"
+)
+
+// NotificationEvent is a PostgreSQL transactional outbox event consumed by
+// the notification worker.
+type NotificationEvent struct {
+	ID          uint       `gorm:"primaryKey" json:"id"`
+	EventType   string     `gorm:"type:varchar(50);not null;index" json:"event_type"`
+	BookingID   uint       `gorm:"not null;index" json:"booking_id"`
+	PaymentURL  string     `gorm:"type:varchar(500)" json:"-"`
+	ExpiresAt   *time.Time `json:"-"`
+	Status      string     `gorm:"type:varchar(20);not null;default:'PENDING';index" json:"status"`
+	Attempts    int        `gorm:"not null;default:0" json:"-"`
+	MaxAttempts int        `gorm:"not null;default:5" json:"-"`
+	AvailableAt time.Time  `gorm:"not null;index" json:"-"`
+	LockedAt    *time.Time `gorm:"index" json:"-"`
+	LastError   string     `gorm:"type:text" json:"-"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ProcessedAt *time.Time `json:"-"`
+}
+
 // Status antrean pengingat di MongoDB.
 const (
 	ReminderStatusScheduled  = "SCHEDULED"

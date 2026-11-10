@@ -37,22 +37,16 @@ func (e *CheckoutConflictError) Error() string {
 type CheckoutController interface {
 	Create(ctx context.Context, actor Actor, req dto.CheckoutRequest) (*dto.CheckoutCreatedResponse, error)
 	Detail(ctx context.Context, actor Actor, id uint) (*dto.CheckoutResponse, error)
-	SetNotificationController(nc NotificationController)
 }
 
 type checkoutController struct {
 	uow      repository.UnitOfWork
 	invoices xendit.InvoiceService
 	policy   BookingPolicy
-	notif    NotificationController
 }
 
 func NewCheckoutController(uow repository.UnitOfWork, invoices xendit.InvoiceService, policy BookingPolicy) CheckoutController {
 	return &checkoutController{uow: uow, invoices: invoices, policy: policy}
-}
-
-func (c *checkoutController) SetNotificationController(nc NotificationController) {
-	c.notif = nc
 }
 
 type preparedCheckoutItem struct {
@@ -304,6 +298,14 @@ func (c *checkoutController) Create(ctx context.Context, actor Actor, req dto.Ch
 			if err := r.Booking().Update(ctx, booking); err != nil {
 				return err
 			}
+			if err := r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
+				EventType:  models.NotificationEventPaymentInvoiceReady,
+				BookingID:  booking.ID,
+				PaymentURL: invoice.InvoiceURL,
+				ExpiresAt:  expiredAt,
+			}); err != nil {
+				return err
+			}
 			for j := range items {
 				if items[j].booking.ID == booking.ID {
 					items[j].booking = booking
@@ -321,13 +323,6 @@ func (c *checkoutController) Create(ctx context.Context, actor Actor, req dto.Ch
 	for i := range items {
 		items[i].booking.Payment = items[i].payment
 		bookings = append(bookings, dto.NewBookingResponse(*items[i].booking))
-	}
-	if c.notif != nil && len(items) > 0 {
-		notifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		if err := c.notif.SchedulePaymentReminder(notifyCtx, items[0].booking.ID, invoice.InvoiceURL, *expiredAt); err != nil {
-			log.Printf("checkout: payment reminder scheduling failed for checkout %d: %v", checkout.ID, err)
-		}
-		cancel()
 	}
 	return &dto.CheckoutCreatedResponse{
 		CheckoutID: checkout.ID, CheckoutCode: checkout.Code, TotalPrice: checkout.Amount,

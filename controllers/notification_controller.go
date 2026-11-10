@@ -52,6 +52,7 @@ type NotificationController interface {
 	MarkAsRead(ctx context.Context, notifIDHex string, userID uint) error
 	MarkAllAsRead(ctx context.Context, userID uint) error
 	ListReminderJobs(ctx context.Context, page, limit int, status string) ([]models.ReminderJob, int64, error)
+	HandleOutboxEvent(ctx context.Context, event models.NotificationEvent) error
 }
 
 type notificationController struct {
@@ -82,6 +83,24 @@ func NewNotificationController(
 		controller.whatsAppJobs = options[0].WhatsAppJobs
 	}
 	return controller
+}
+
+func (c *notificationController) HandleOutboxEvent(ctx context.Context, event models.NotificationEvent) error {
+	switch event.EventType {
+	case models.NotificationEventBookingConfirmed:
+		return c.ScheduleRemindersForBooking(ctx, event.BookingID)
+	case models.NotificationEventBookingCancelled:
+		return c.CancelRemindersForBooking(ctx, event.BookingID)
+	case models.NotificationEventBookingRescheduled:
+		return c.RescheduleBooking(ctx, event.BookingID)
+	case models.NotificationEventPaymentInvoiceReady:
+		if event.ExpiresAt == nil {
+			return fmt.Errorf("payment invoice ready event %d has no expiry time", event.ID)
+		}
+		return c.SchedulePaymentReminder(ctx, event.BookingID, event.PaymentURL, *event.ExpiresAt)
+	default:
+		return fmt.Errorf("unsupported notification outbox event type %q", event.EventType)
+	}
 }
 
 // ScheduleRemindersForBooking membuat dokumen pengingat H-24 dan H-2 jam di MongoDB saat booking CONFIRMED.

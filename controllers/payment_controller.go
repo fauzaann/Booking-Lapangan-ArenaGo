@@ -23,24 +23,17 @@ type PaymentController interface {
 	List(ctx context.Context, query dto.PaymentFilterQuery) ([]dto.PaymentResponse, int64, error)
 	SyncPaymentStatus(ctx context.Context, actor Actor, bookingID uint) (*dto.PaymentResponse, error)
 	SyncCheckoutStatus(ctx context.Context, actor Actor, checkoutID uint) (*dto.CheckoutResponse, error)
-	SetNotificationController(nc NotificationController)
 }
 
 type paymentController struct {
 	uow          repository.UnitOfWork
 	invoices     xendit.InvoiceService
 	webhookToken string
-	notif        NotificationController
 }
 
 // NewPaymentController membuat PaymentController.
 func NewPaymentController(uow repository.UnitOfWork, invoices xendit.InvoiceService, webhookToken string) PaymentController {
 	return &paymentController{uow: uow, invoices: invoices, webhookToken: webhookToken}
-}
-
-// SetNotificationController menyambungkan controller notifikasi untuk memicu reminder saat pembayaran sukses.
-func (c *paymentController) SetNotificationController(nc NotificationController) {
-	c.notif = nc
 }
 
 // HandleWebhook memproses callback invoice dari Xendit.
@@ -64,8 +57,6 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 
 	verified := c.verify(ctx, payload)
 
-	var confirmedBookingIDs []uint
-
 	err := c.uow.Atomic(ctx, func(r repository.Registry) error {
 		checkout, checkoutErr := r.Checkout().FindByExternalID(ctx, verified.ExternalID)
 		if checkoutErr == nil {
@@ -73,7 +64,7 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 				log.Printf("payment: checkout webhook for %s ignored, status already %s", checkout.ExternalID, checkout.Status)
 				return nil
 			}
-			return applyCheckoutWebhook(ctx, r, checkout, verified, &confirmedBookingIDs)
+			return applyCheckoutWebhook(ctx, r, checkout, verified)
 		}
 		if !apperror.IsNotFound(checkoutErr) {
 			return checkoutErr
@@ -126,8 +117,6 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 				}
 				booking.CheckInToken = &checkInToken
 			}
-			confirmedBookingIDs = append(confirmedBookingIDs, booking.ID)
-
 		case xendit.StatusExpired:
 			payment.Status = models.PaymentStatusExpired
 			if booking.Status == models.BookingStatusPending || booking.Status == models.BookingStatusWaitingPayment {
@@ -142,13 +131,20 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 		if err := r.Payment().Update(ctx, payment); err != nil {
 			return err
 		}
-		return r.Booking().Update(ctx, booking)
+		if err := r.Booking().Update(ctx, booking); err != nil {
+			return err
+		}
+		if payment.Status == models.PaymentStatusPaid {
+			return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
+				EventType: models.NotificationEventBookingConfirmed,
+				BookingID: booking.ID,
+			})
+		}
+		return nil
 	})
 	if err != nil {
 		return err
 	}
-
-	c.scheduleConfirmedBookings(confirmedBookingIDs)
 	return nil
 }
 
@@ -157,7 +153,6 @@ func applyCheckoutWebhook(
 	r repository.Registry,
 	checkout *models.Checkout,
 	verified xendit.WebhookPayload,
-	confirmedBookingIDs *[]uint,
 ) error {
 	status := strings.ToUpper(strings.TrimSpace(verified.Status))
 	switch status {
@@ -218,7 +213,12 @@ func applyCheckoutWebhook(
 			if err := r.Booking().Update(ctx, booking); err != nil {
 				return err
 			}
-			*confirmedBookingIDs = append(*confirmedBookingIDs, booking.ID)
+			if err := r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
+				EventType: models.NotificationEventBookingConfirmed,
+				BookingID: booking.ID,
+			}); err != nil {
+				return err
+			}
 		}
 	case xendit.StatusExpired:
 		checkout.Status = models.PaymentStatusExpired
@@ -246,20 +246,6 @@ func newCheckInToken() (string, error) {
 		return "", apperror.Internal("failed to generate check-in token", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(randomBytes), nil
-}
-
-func (c *paymentController) scheduleConfirmedBookings(bookingIDs []uint) {
-	if c.notif == nil {
-		return
-	}
-	for _, bookingID := range bookingIDs {
-		id := bookingID
-		go func() {
-			if err := c.notif.ScheduleRemindersForBooking(context.Background(), id); err != nil {
-				log.Printf("payment: failed to schedule reminder for booking %d: %v", id, err)
-			}
-		}()
-	}
 }
 
 // verify mengambil ulang data invoice dari Xendit. Jika gagal (misal jaringan),
@@ -360,7 +346,6 @@ func (c *paymentController) syncCheckoutPayment(
 		response := dto.NewPaymentResponse(*payment)
 		return &response, nil
 	}
-	var confirmedIDs []uint
 	err = c.uow.Atomic(ctx, func(r repository.Registry) error {
 		current, err := r.Checkout().FindByID(ctx, checkout.ID)
 		if err != nil {
@@ -374,12 +359,11 @@ func (c *paymentController) syncCheckoutPayment(
 			PaidAmount: invoice.PaidAmount, PaidAt: invoice.PaidAt,
 			PaymentMethod: invoice.PaymentMethod, PaymentChannel: invoice.PaymentChannel,
 		}
-		return applyCheckoutWebhook(ctx, r, current, payload, &confirmedIDs)
+		return applyCheckoutWebhook(ctx, r, current, payload)
 	})
 	if err != nil {
 		return nil, err
 	}
-	c.scheduleConfirmedBookings(confirmedIDs)
 	updated, err := c.uow.Payment().FindByBookingID(ctx, payment.BookingID)
 	if err != nil {
 		return nil, err
@@ -444,7 +428,6 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 		return &res, nil
 	}
 
-	var confirmedBookingID uint
 	switch strings.ToUpper(strings.TrimSpace(invoice.Status)) {
 	case xendit.StatusPaid, xendit.StatusSettled:
 		err = c.uow.Atomic(ctx, func(r repository.Registry) error {
@@ -478,21 +461,19 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 				}
 				currentBooking.CheckInToken = &checkInToken
 			}
-			if shouldNotify {
-				confirmedBookingID = currentBooking.ID
+			if err := r.Booking().Update(ctx, currentBooking); err != nil {
+				return err
 			}
-			return r.Booking().Update(ctx, currentBooking)
+			if shouldNotify {
+				return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
+					EventType: models.NotificationEventBookingConfirmed,
+					BookingID: currentBooking.ID,
+				})
+			}
+			return nil
 		})
 		if err != nil {
 			return nil, err
-		}
-
-		if confirmedBookingID > 0 && c.notif != nil {
-			go func() {
-				if err := c.notif.ScheduleRemindersForBooking(context.Background(), confirmedBookingID); err != nil {
-					log.Printf("payment: failed to schedule reminders for booking %d: %v", confirmedBookingID, err)
-				}
-			}()
 		}
 
 	case xendit.StatusExpired:

@@ -194,6 +194,31 @@ func TestPostgresConcurrentReschedulesCannotTakeSameSlot(t *testing.T) {
 	if overlap {
 		t.Fatal("cancelled booking still blocks the slot")
 	}
+
+	var events []models.NotificationEvent
+	if err := scopedDB.WithContext(ctx).Order("id ASC").Find(&events).Error; err != nil {
+		t.Fatalf("read transactional notification events: %v", err)
+	}
+	if len(events) != 2 ||
+		events[0].EventType != models.NotificationEventBookingRescheduled ||
+		events[1].EventType != models.NotificationEventBookingCancelled {
+		t.Fatalf("expected committed reschedule and cancellation events only, got %+v", events)
+	}
+
+	outbox := repository.NewNotificationOutboxRepository(scopedDB)
+	claimed, err := outbox.ClaimPending(ctx, time.Now(), 10)
+	if err != nil {
+		t.Fatalf("claim notification outbox events: %v", err)
+	}
+	if len(claimed) != 2 || claimed[0].Attempts != 1 || claimed[1].Attempts != 1 {
+		t.Fatalf("expected both events to be claimed once, got %+v", claimed)
+	}
+	if err := outbox.MarkProcessed(ctx, claimed[0].ID, time.Now()); err != nil {
+		t.Fatalf("mark notification event processed: %v", err)
+	}
+	if err := outbox.Retry(ctx, claimed[1], fmt.Errorf("simulated delivery failure"), time.Now()); err != nil {
+		t.Fatalf("retry notification event: %v", err)
+	}
 }
 
 func postgresSchemaDSN(t *testing.T, dsn, schema string) string {

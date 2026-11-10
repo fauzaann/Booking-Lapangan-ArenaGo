@@ -39,7 +39,6 @@ type BookingController interface {
 	Reschedule(ctx context.Context, actor Actor, id uint, req dto.RescheduleBookingRequest) (*dto.BookingResponse, error)
 	UpdateStatus(ctx context.Context, id uint, status models.BookingStatus) (*dto.BookingResponse, error)
 	CheckIn(ctx context.Context, actor Actor, req dto.CheckInRequest) (*dto.BookingResponse, error)
-	SetNotificationController(nc NotificationController)
 }
 
 type bookingController struct {
@@ -47,7 +46,6 @@ type bookingController struct {
 	reads    booking.ReadRepository
 	invoices xendit.InvoiceService
 	policy   BookingPolicy
-	notif    NotificationController
 }
 
 // NewBookingController membuat BookingController.
@@ -72,11 +70,6 @@ func NewBookingController(
 		invoices: invoices,
 		policy:   policy,
 	}
-}
-
-// SetNotificationController menyambungkan controller notifikasi.
-func (c *bookingController) SetNotificationController(nc NotificationController) {
-	c.notif = nc
 }
 
 // Create menjalankan alur: validasi -> cek jadwal -> cek availability (dalam
@@ -262,16 +255,18 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 			return updateErr
 		}
 		booking.Status = models.BookingStatusWaitingPayment
-		return r.Booking().Update(ctx, booking)
+		if updateErr := r.Booking().Update(ctx, booking); updateErr != nil {
+			return updateErr
+		}
+		return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
+			EventType:  models.NotificationEventPaymentInvoiceReady,
+			BookingID:  booking.ID,
+			PaymentURL: invoice.InvoiceURL,
+			ExpiresAt:  expiredAt,
+		})
 	})
 	if err != nil {
 		return nil, err
-	}
-
-	if c.notif != nil {
-		c.notifyAfterCommit(ctx, "payment reminder scheduling", booking.ID, func(ctx context.Context) error {
-			return c.notif.SchedulePaymentReminder(ctx, booking.ID, invoice.InvoiceURL, *expiredAt)
-		})
 	}
 
 	return &dto.BookingCreatedResponse{
@@ -413,15 +408,15 @@ func (c *bookingController) CancelWithReason(ctx context.Context, actor Actor, i
 		}
 		locked.Payment = payment
 		booking = locked
-		return nil
+		return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
+			EventType: models.NotificationEventBookingCancelled,
+			BookingID: locked.ID,
+		})
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	c.notifyAfterCommit(ctx, "booking cancellation", booking.ID, func(ctx context.Context) error {
-		return c.notif.CancelRemindersForBooking(ctx, booking.ID)
-	})
 	response := dto.NewBookingResponse(*booking)
 	return &response, nil
 }
@@ -555,15 +550,15 @@ func (c *bookingController) Reschedule(ctx context.Context, actor Actor, id uint
 			return err
 		}
 		booking = locked
-		return nil
+		return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
+			EventType: models.NotificationEventBookingRescheduled,
+			BookingID: locked.ID,
+		})
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	c.notifyAfterCommit(ctx, "booking reschedule", booking.ID, func(ctx context.Context) error {
-		return c.notif.RescheduleBooking(ctx, booking.ID)
-	})
 	response := dto.NewBookingResponse(*booking)
 	return &response, nil
 }
@@ -609,59 +604,45 @@ func validateCancellationDeadline(booking *models.Booking, minHours int, now tim
 	return nil
 }
 
-func (c *bookingController) notifyAfterCommit(
-	ctx context.Context,
-	action string,
-	bookingID uint,
-	notify func(context.Context) error,
-) {
-	if c.notif == nil {
-		return
-	}
-	notifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	if err := notify(notifyCtx); err != nil {
-		log.Printf("booking: %s committed but notification update failed for booking %d: %v", action, bookingID, err)
-	}
-}
-
 // UpdateStatus mengubah status booking dari panel admin.
 func (c *bookingController) UpdateStatus(ctx context.Context, id uint, status models.BookingStatus) (*dto.BookingResponse, error) {
 	if !status.Valid() {
 		return nil, apperror.Unprocessable("invalid booking status")
 	}
 
-	booking, err := c.uow.Booking().FindByID(ctx, id)
+	err := c.uow.Atomic(ctx, func(r repository.Registry) error {
+		booking, err := r.Booking().FindDetailByIDForUpdate(ctx, id)
+		if err != nil {
+			return err
+		}
+		if booking.Status == status {
+			return nil
+		}
+		booking.Status = status
+		if status == models.BookingStatusCancelled && booking.CancelledAt == nil {
+			now := timeNow()
+			booking.CancelledAt = &now
+		}
+		if err := r.Booking().Update(ctx, booking); err != nil {
+			return err
+		}
+		eventType := ""
+		switch status {
+		case models.BookingStatusConfirmed:
+			eventType = models.NotificationEventBookingConfirmed
+		case models.BookingStatusCancelled:
+			eventType = models.NotificationEventBookingCancelled
+		}
+		if eventType == "" {
+			return nil
+		}
+		return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
+			EventType: eventType,
+			BookingID: booking.ID,
+		})
+	})
 	if err != nil {
 		return nil, err
-	}
-	if booking.Status == status {
-		return c.Detail(ctx, Actor{Role: models.RoleAdmin}, id)
-	}
-
-	booking.Status = status
-	if status == models.BookingStatusCancelled && booking.CancelledAt == nil {
-		now := timeNow()
-		booking.CancelledAt = &now
-	}
-	if err := c.uow.Booking().Update(ctx, booking); err != nil {
-		return nil, err
-	}
-
-	if c.notif != nil {
-		if status == models.BookingStatusConfirmed {
-			go func() {
-				if err := c.notif.ScheduleRemindersForBooking(context.Background(), id); err != nil {
-					log.Printf("booking: failed to schedule reminders for booking %d: %v", id, err)
-				}
-			}()
-		} else if status == models.BookingStatusCancelled {
-			go func() {
-				if err := c.notif.CancelRemindersForBooking(context.Background(), id); err != nil {
-					log.Printf("booking: failed to send cancellation notifications for booking %d: %v", id, err)
-				}
-			}()
-		}
 	}
 
 	return c.Detail(ctx, Actor{Role: models.RoleAdmin}, id)

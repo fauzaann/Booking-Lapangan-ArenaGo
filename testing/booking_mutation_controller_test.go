@@ -113,28 +113,7 @@ type mutationUnitOfWork struct {
 	fieldRepo   repository.FieldRepository
 	schedule    repository.ScheduleRepository
 	payment     repository.PaymentRepository
-}
-
-type mutationNotifier struct {
-	controllers.NotificationController
-	cancelled   int
-	rescheduled int
-	afterCommit func()
-}
-
-func (n *mutationNotifier) CancelRemindersForBooking(context.Context, uint) error {
-	n.cancelled++
-	if n.afterCommit != nil {
-		n.afterCommit()
-	}
-	return nil
-}
-func (n *mutationNotifier) RescheduleBooking(context.Context, uint) error {
-	n.rescheduled++
-	if n.afterCommit != nil {
-		n.afterCommit()
-	}
-	return nil
+	outbox      *testOutboxRepo
 }
 
 func (u *mutationUnitOfWork) User() repository.UserRepository { return nil }
@@ -153,6 +132,12 @@ func (u *mutationUnitOfWork) Payment() repository.PaymentRepository {
 }
 func (u *mutationUnitOfWork) Checkout() repository.CheckoutRepository { return nil }
 func (u *mutationUnitOfWork) AuditLog() repository.AuditLogRepository { return nil }
+func (u *mutationUnitOfWork) NotificationOutbox() repository.NotificationOutboxRepository {
+	if u.outbox == nil {
+		u.outbox = &testOutboxRepo{}
+	}
+	return u.outbox
+}
 func (u *mutationUnitOfWork) Atomic(ctx context.Context, fn func(repository.Registry) error) error {
 	u.tx.Lock()
 	defer u.tx.Unlock()
@@ -227,12 +212,6 @@ func cloneMutationBooking(booking *models.Booking) *models.Booking {
 func TestBookingCancelValidAndPaymentHandling(t *testing.T) {
 	booking := mutationBooking(1, 7, models.BookingStatusWaitingPayment, futureBookingDate(2), "10:00", "12:00")
 	controller, uow := newMutationController(booking)
-	notifier := &mutationNotifier{afterCommit: func() {
-		if uow.bookingRepo.bookings[booking.ID].Status != models.BookingStatusCancelled {
-			t.Error("cancellation notification ran before transaction commit")
-		}
-	}}
-	controller.SetNotificationController(notifier)
 	paymentRepo := uow.payment.(*testPaymentRepo)
 	paymentRepo.payment = &models.Payment{
 		BookingID: booking.ID, Status: models.PaymentStatusPending,
@@ -251,8 +230,8 @@ func TestBookingCancelValidAndPaymentHandling(t *testing.T) {
 	if uow.bookingRepo.bookings[booking.ID].CancelledAt == nil {
 		t.Fatal("expected cancellation timestamp to be saved")
 	}
-	if notifier.cancelled != 1 {
-		t.Fatalf("expected one post-commit cancellation notification, got %d", notifier.cancelled)
+	if len(uow.outbox.events) != 1 || uow.outbox.events[0].EventType != models.NotificationEventBookingCancelled {
+		t.Fatalf("expected transactional cancellation event, got %+v", uow.outbox.events)
 	}
 }
 
@@ -341,12 +320,6 @@ func TestBookingRescheduleAvailableSlot(t *testing.T) {
 	booking := mutationBooking(6, 7, models.BookingStatusConfirmed, date, "10:00", "12:00")
 	booking.Payment = &models.Payment{BookingID: booking.ID, Status: models.PaymentStatusPaid}
 	controller, uow := newMutationController(booking)
-	notifier := &mutationNotifier{afterCommit: func() {
-		if uow.bookingRepo.bookings[booking.ID].StartTime != "14:00" {
-			t.Error("reschedule notification ran before transaction commit")
-		}
-	}}
-	controller.SetNotificationController(notifier)
 
 	got, err := controller.Reschedule(context.Background(), controllers.Actor{UserID: 7}, booking.ID, dto.RescheduleBookingRequest{
 		BookingDate: date.Format(timeutil.DateLayout), StartTime: "14:00", EndTime: "16:00",
@@ -364,8 +337,8 @@ func TestBookingRescheduleAvailableSlot(t *testing.T) {
 	if stored.Payment == nil || stored.Payment.Status != models.PaymentStatusPaid {
 		t.Fatal("rescheduling changed payment status")
 	}
-	if notifier.rescheduled != 1 {
-		t.Fatalf("expected one post-commit reschedule notification, got %d", notifier.rescheduled)
+	if len(uow.outbox.events) != 1 || uow.outbox.events[0].EventType != models.NotificationEventBookingRescheduled {
+		t.Fatalf("expected transactional reschedule event, got %+v", uow.outbox.events)
 	}
 }
 

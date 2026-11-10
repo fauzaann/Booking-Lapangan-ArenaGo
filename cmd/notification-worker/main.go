@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"Booking-Lapangan/config"
+	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/pkg/whatsapp"
 	"Booking-Lapangan/repository"
 	"Booking-Lapangan/worker"
@@ -75,6 +76,19 @@ func main() {
 	}
 
 	uow := repository.NewUnitOfWork(db)
+	notifController := controllers.NewNotificationController(
+		uow, notifications, reminders, cfg.Mongo,
+		controllers.NotificationOptions{
+			WhatsAppConfig: controllers.WhatsAppNotificationConfig{
+				PaymentReminderDelay:       cfg.WhatsApp.PaymentReminderDelay,
+				BookingConfirmedTemplate:   cfg.WhatsApp.BookingConfirmedTemplate,
+				BookingCancelledTemplate:   cfg.WhatsApp.BookingCancelledTemplate,
+				BookingRescheduledTemplate: cfg.WhatsApp.BookingRescheduledTemplate,
+				VenueAnnouncementTemplate:  cfg.WhatsApp.VenueAnnouncementTemplate,
+			},
+			WhatsAppJobs: whatsAppJobs,
+		},
+	)
 	reminderWorker := worker.NewReminderWorker(
 		reminders, notifications, cfg.Mongo.WorkerInterval,
 		worker.ReminderWorkerOptions{
@@ -85,11 +99,15 @@ func main() {
 	whatsAppWorker := worker.NewWhatsAppDeliveryWorker(
 		whatsAppJobs, uow.User(), sender, cfg.WhatsApp, cfg.Mongo.WorkerInterval,
 	)
+	outboxWorker := worker.NewNotificationOutboxWorker(
+		uow.NotificationOutbox(), notifController, cfg.Mongo.WorkerInterval,
+	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go reminderWorker.Start(ctx)
 	go whatsAppWorker.Start(ctx)
+	go outboxWorker.Start(ctx)
 
 	log.Println("notification-worker: running")
 	<-ctx.Done()

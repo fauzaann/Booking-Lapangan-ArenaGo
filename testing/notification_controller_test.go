@@ -233,6 +233,9 @@ func (m *mockUOW) Rating() repository.RatingRepository     { return m.ratingRepo
 func (m *mockUOW) Payment() repository.PaymentRepository   { return nil }
 func (m *mockUOW) Checkout() repository.CheckoutRepository { return nil }
 func (m *mockUOW) AuditLog() repository.AuditLogRepository { return nil }
+func (m *mockUOW) NotificationOutbox() repository.NotificationOutboxRepository {
+	return &testOutboxRepo{}
+}
 func (m *mockUOW) Atomic(ctx context.Context, fn func(r repository.Registry) error) error {
 	return fn(m)
 }

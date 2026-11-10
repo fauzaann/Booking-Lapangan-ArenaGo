@@ -24,6 +24,7 @@ type Registry interface {
 	Payment() PaymentRepository
 	Checkout() CheckoutRepository
 	AuditLog() AuditLogRepository
+	NotificationOutbox() NotificationOutboxRepository
 }
 
 // UnitOfWork adalah Registry yang mampu menjalankan beberapa operasi
@@ -65,6 +66,11 @@ func (r *registry) Checkout() CheckoutRepository { return NewCheckoutRepository(
 
 // AuditLog mengembalikan repository audit log pada database aktif.
 func (r *registry) AuditLog() AuditLogRepository { return NewAuditLogRepository(r.db) }
+
+// NotificationOutbox returns the transactional notification outbox repository.
+func (r *registry) NotificationOutbox() NotificationOutboxRepository {
+	return NewNotificationOutboxRepository(r.db)
+}
 
 // Atomic menjalankan fn di dalam satu transaksi. Jika fn mengembalikan error,
 // transaksi otomatis di-rollback; jika nil, transaksi di-commit.

@@ -24,6 +24,9 @@ func (u *analyticsMockUOW) Rating() repository.RatingRepository     { return nil
 func (u *analyticsMockUOW) Payment() repository.PaymentRepository   { return u.payments }
 func (u *analyticsMockUOW) Checkout() repository.CheckoutRepository { return nil }
 func (u *analyticsMockUOW) AuditLog() repository.AuditLogRepository { return u.auditLog }
+func (u *analyticsMockUOW) NotificationOutbox() repository.NotificationOutboxRepository {
+	return &testOutboxRepo{}
+}
 func (u *analyticsMockUOW) Atomic(_ context.Context, fn func(repository.Registry) error) error {
 	return fn(u)
 }

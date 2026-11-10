@@ -31,7 +31,7 @@ Jalankan worker notifikasi pada terminal/proses terpisah:
 go run ./cmd/notification-worker
 ```
 
-Worker memproses pengingat dan antrean WhatsApp dari MongoDB. API tetap menangani endpoint inbox serta memasukkan pesan WhatsApp ke outbox; jalankan worker agar antrean dapat dikirim.
+Worker memproses transactional outbox notifikasi PostgreSQL, pengingat dan antrean WhatsApp MongoDB. API tetap menangani endpoint inbox; jalankan worker agar event booking/pembayaran diteruskan ke sistem notifikasi.
 
 Di terminal lain, jalankan frontend dari folder frontend:
 
@@ -140,8 +140,8 @@ UI otomatis memakai gradient fallback.
 | --- | --- |
 | Bahasa | Go 1.25 |
 | HTTP Framework | Gin |
-| Database Utama | PostgreSQL 16 (GORM) |
-| Database Notifikasi & Antrean | MongoDB (mongo-driver/v2) |
+| Database Utama + transactional outbox | PostgreSQL 16 (GORM) |
+| Inbox, pengingat & antrean delivery | MongoDB (mongo-driver/v2) |
 | Cache Lapangan | Redis (go-redis/v9, opsional) |
 | Auth | JWT (golang-jwt/v5) + bcrypt |
 | Validasi | go-playground/validator/v10 |
@@ -224,6 +224,7 @@ booking-field/
 | `ratings` | id, booking_id (unique), user_id, field_id, rating (1–5), review (maks. 1.000 karakter), is_visible |
 | `booking_items` | id, booking_id, start_time, end_time, price (rincian per jam) |
 | `payments` | id, booking_id (unique), external_id (unique), invoice_id, invoice_url, amount, payment_method, payment_channel, status, paid_at, expired_at |
+| `notification_events` | id, event_type, booking_id, payment_url, expires_at, status, attempts, available_at, locked_at, last_error |
 
 Relasi: `users 1—N bookings`, `fields 1—N bookings`, `fields 1—N schedules`, `bookings 1—N booking_items`, `bookings 1—1 payments`.
 
@@ -231,7 +232,7 @@ Harga paket saat ini: 2 jam mendapat diskon 5%; 3 jam atau lebih mendapat diskon
 
 MongoDB memakai koleksi `notifications` untuk inbox, `reminder_jobs` untuk pengingat terjadwal, dan `whatsapp_outbox` untuk pengiriman WhatsApp asinkron. Worker mengecek ulang persetujuan WhatsApp sebelum mengirim; job yang prosesnya terhenti dapat diklaim ulang setelah lease kedaluwarsa.
 
-Worker mengirim secara at-least-once: jika proses berhenti setelah provider menerima pesan tetapi sebelum status MongoDB diperbarui, pesan dapat terkirim ulang. Outbox MongoDB juga belum berada dalam transaksi yang sama dengan perubahan booking PostgreSQL; kegagalan enqueue dicatat oleh alur notifikasi, tetapi transactional outbox lintas database belum menjadi bagian tahap ini.
+Perubahan status booking dan pembayaran yang memicu notifikasi (invoice siap, pembayaran/booking dikonfirmasi, pembatalan, dan reschedule) menulis event ke tabel `notification_events` dalam transaksi PostgreSQL yang sama. Worker mengklaim event secara atomik, mencoba ulang dengan jeda eksponensial hingga lima kali, dan mengambil kembali event yang lease-nya kedaluwarsa. Penerusan dari PostgreSQL ke MongoDB serta pengiriman provider tetap at-least-once: crash setelah efek di MongoDB/provider tetapi sebelum event ditandai selesai dapat menyebabkan pemrosesan/pesan duplikat. PostgreSQL dan MongoDB tidak berada dalam satu transaksi terdistribusi.
 
 Jam disimpan sebagai string `"HH:MM"` 24 jam agar perbandingan leksikografis di SQL identik dengan perbandingan kronologis.
 

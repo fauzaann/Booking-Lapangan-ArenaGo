@@ -167,12 +167,7 @@ func main() {
 		CancelMinHours: cfg.Booking.CancelMinHours, InvoiceDuration: cfg.Xendit.InvoiceDuration,
 		SuccessRedirectURL: cfg.Xendit.SuccessRedirectURL, FailureRedirectURL: cfg.Xendit.FailureRedirectURL,
 	})
-	checkoutController.SetNotificationController(notifController)
 	adminController := controllers.NewAdminController(uow)
-
-	// Hubungkan notifikasi ke lifecycle pembayaran dan pembatalan booking
-	paymentController.SetNotificationController(notifController)
-	bookingController.SetNotificationController(notifController)
 
 	engine := router.New(router.Dependencies{
 		Config:       cfg,
