@@ -15,6 +15,14 @@ const (
 	ReminderStatusCancelled  = "CANCELLED"
 )
 
+const (
+	WhatsAppJobStatusScheduled  = "SCHEDULED"
+	WhatsAppJobStatusProcessing = "PROCESSING"
+	WhatsAppJobStatusSent       = "SENT"
+	WhatsAppJobStatusFailed     = "FAILED"
+	WhatsAppJobStatusCancelled  = "CANCELLED"
+)
+
 // Tipe pengingat jadwal bermain.
 const (
 	ReminderTypeH24        = "H_24"
@@ -68,6 +76,22 @@ type ReminderJob struct {
 	ErrorMessage      string        `bson:"error_message,omitempty" json:"error_message,omitempty"`
 	CreatedAt         time.Time     `bson:"created_at" json:"created_at"`
 	UpdatedAt         time.Time     `bson:"updated_at" json:"updated_at"`
+}
+
+// WhatsAppJob is an outbox entry for asynchronous WhatsApp delivery.
+type WhatsAppJob struct {
+	ID           bson.ObjectID `bson:"_id,omitempty" json:"id"`
+	UserID       uint          `bson:"user_id" json:"user_id"`
+	Template     string        `bson:"template" json:"template"`
+	Parameters   []string      `bson:"parameters" json:"-"`
+	ScheduledFor time.Time     `bson:"scheduled_for" json:"scheduled_for"`
+	Status       string        `bson:"status" json:"status"`
+	RetryCount   int           `bson:"retry_count" json:"retry_count"`
+	MaxRetries   int           `bson:"max_retries" json:"max_retries"`
+	SentAt       *time.Time    `bson:"sent_at,omitempty" json:"sent_at,omitempty"`
+	ErrorMessage string        `bson:"error_message,omitempty" json:"error_message,omitempty"`
+	CreatedAt    time.Time     `bson:"created_at" json:"created_at"`
+	UpdatedAt    time.Time     `bson:"updated_at" json:"updated_at"`
 }
 
 // Notification merepresentasikan item notifikasi in-app pada kotak masuk pengguna.

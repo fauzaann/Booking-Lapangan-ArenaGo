@@ -124,6 +124,16 @@ type RedisConfig struct {
 
 // Load membaca file .env (jika ada) lalu environment variable.
 func Load() (*Config, error) {
+	return load(true, false)
+}
+
+// LoadNotificationWorker loads worker settings, including WhatsApp credentials,
+// without requiring API-only secrets such as JWT and Xendit configuration.
+func LoadNotificationWorker() (*Config, error) {
+	return load(false, true)
+}
+
+func load(validate, includeWhatsAppCredentials bool) (*Config, error) {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		log.Printf("config: .env not loaded (%v), falling back to OS environment", err)
 	}
@@ -179,8 +189,6 @@ func Load() (*Config, error) {
 			ReminderH2:     getEnvBool("REMINDER_H2_ENABLED", true),
 		},
 		WhatsApp: WhatsAppConfig{
-			PhoneNumberID:              getEnv("WHATSAPP_PHONE_NUMBER_ID", ""),
-			AccessToken:                getEnv("WHATSAPP_ACCESS_TOKEN", ""),
 			BaseURL:                    getEnv("WHATSAPP_GRAPH_API_URL", "https://graph.facebook.com/v22.0"),
 			Language:                   getEnv("WHATSAPP_TEMPLATE_LANGUAGE", "id"),
 			PaymentReminderDelay:       time.Duration(getEnvInt("WHATSAPP_PAYMENT_REMINDER_DELAY_MINUTES", 10)) * time.Minute,
@@ -198,9 +206,15 @@ func Load() (*Config, error) {
 			CacheTTL: time.Duration(getEnvInt("FIELD_CACHE_TTL_MINUTES", 5)) * time.Minute,
 		},
 	}
+	if includeWhatsAppCredentials {
+		cfg.WhatsApp.PhoneNumberID = getEnv("WHATSAPP_PHONE_NUMBER_ID", "")
+		cfg.WhatsApp.AccessToken = getEnv("WHATSAPP_ACCESS_TOKEN", "")
+	}
 
-	if err := cfg.validate(); err != nil {
-		return nil, err
+	if validate {
+		if err := cfg.validate(); err != nil {
+			return nil, err
+		}
 	}
 	return cfg, nil
 }
@@ -231,9 +245,6 @@ func (c *Config) validate() error {
 	}
 	if c.Redis.CacheTTL <= 0 {
 		return fmt.Errorf("FIELD_CACHE_TTL_MINUTES must be greater than 0")
-	}
-	if (c.WhatsApp.PhoneNumberID == "") != (c.WhatsApp.AccessToken == "") {
-		return fmt.Errorf("WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN must be configured together")
 	}
 	if c.WhatsApp.PaymentReminderDelay <= 0 {
 		return fmt.Errorf("WHATSAPP_PAYMENT_REMINDER_DELAY_MINUTES must be greater than 0")

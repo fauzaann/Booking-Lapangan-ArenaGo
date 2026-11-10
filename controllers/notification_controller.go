@@ -13,7 +13,6 @@ import (
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/timeutil"
-	"Booking-Lapangan/pkg/whatsapp"
 	"Booking-Lapangan/repository"
 )
 
@@ -22,14 +21,23 @@ type VenueAnnouncementResult struct {
 	InAppEnabled       bool `json:"in_app_enabled"`
 	WhatsAppRecipients int  `json:"whatsapp_recipients"`
 	WhatsAppSent       int  `json:"whatsapp_sent"`
+	WhatsAppQueued     int  `json:"whatsapp_queued"`
 	WhatsAppFailed     int  `json:"whatsapp_failed"`
 	InAppFailed        int  `json:"in_app_failed"`
 	WhatsAppEnabled    bool `json:"whatsapp_enabled"`
 }
 
 type NotificationOptions struct {
-	WhatsAppConfig config.WhatsAppConfig
-	WhatsAppSender whatsapp.Sender
+	WhatsAppConfig WhatsAppNotificationConfig
+	WhatsAppJobs   repository.WhatsAppJobRepository
+}
+
+type WhatsAppNotificationConfig struct {
+	PaymentReminderDelay       time.Duration
+	BookingConfirmedTemplate   string
+	BookingCancelledTemplate   string
+	BookingRescheduledTemplate string
+	VenueAnnouncementTemplate  string
 }
 
 // NotificationController mengelola penjadwalan reminder dan inbox notifikasi berbasis MongoDB.
@@ -50,9 +58,9 @@ type notificationController struct {
 	uow          repository.UnitOfWork
 	notifRepo    repository.NotificationRepository
 	reminderRepo repository.ReminderRepository
+	whatsAppJobs repository.WhatsAppJobRepository
 	mongoCfg     config.MongoConfig
-	whatsAppCfg  config.WhatsAppConfig
-	whatsApp     whatsapp.Sender
+	whatsAppCfg  WhatsAppNotificationConfig
 }
 
 // NewNotificationController membuat controller notifikasi.
@@ -71,7 +79,7 @@ func NewNotificationController(
 	}
 	if len(options) > 0 {
 		controller.whatsAppCfg = options[0].WhatsAppConfig
-		controller.whatsApp = options[0].WhatsAppSender
+		controller.whatsAppJobs = options[0].WhatsAppJobs
 	}
 	return controller
 }
@@ -109,10 +117,10 @@ func (c *notificationController) ScheduleRemindersForBooking(ctx context.Context
 		userName = booking.User.Name
 	}
 	channels := []string{models.NotificationChannelInApp}
-	whatsAppSent, whatsAppErr := c.sendWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingConfirmedTemplate, []string{
+	whatsAppQueued, whatsAppErr := c.enqueueWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingConfirmedTemplate, []string{
 		userName, booking.BookingCode, field, dateStr, booking.StartTime, booking.EndTime,
 	})
-	if whatsAppSent {
+	if whatsAppQueued {
 		channels = append(channels, models.NotificationChannelWA)
 	}
 	if c.notifRepo != nil {
@@ -208,11 +216,11 @@ func (c *notificationController) CancelRemindersForBooking(ctx context.Context, 
 	channels := []string{models.NotificationChannelInApp}
 	var whatsAppErr error
 	if booking.User != nil {
-		whatsAppSent, sendErr := c.sendWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingCancelledTemplate, []string{
+		whatsAppQueued, sendErr := c.enqueueWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingCancelledTemplate, []string{
 			booking.User.Name, booking.BookingCode, fieldName(booking),
 		})
 		whatsAppErr = sendErr
-		if whatsAppSent {
+		if whatsAppQueued {
 			channels = append(channels, models.NotificationChannelWA)
 		}
 	}
@@ -259,11 +267,11 @@ func (c *notificationController) RescheduleBooking(ctx context.Context, bookingI
 	channels := []string{models.NotificationChannelInApp}
 	var whatsAppErr error
 	if booking.User != nil {
-		whatsAppSent, sendErr := c.sendWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingRescheduledTemplate, []string{
+		whatsAppQueued, sendErr := c.enqueueWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingRescheduledTemplate, []string{
 			booking.User.Name, booking.BookingCode, fieldName(booking), dateStr, booking.StartTime, booking.EndTime,
 		})
 		whatsAppErr = sendErr
-		if whatsAppSent {
+		if whatsAppQueued {
 			channels = append(channels, models.NotificationChannelWA)
 		}
 	}
@@ -296,7 +304,7 @@ func (c *notificationController) RescheduleBooking(ctx context.Context, bookingI
 func (c *notificationController) PublishVenueAnnouncement(ctx context.Context, title, message string) (*VenueAnnouncementResult, error) {
 	result := &VenueAnnouncementResult{
 		InAppEnabled:    c.notifRepo != nil,
-		WhatsAppEnabled: c.whatsApp != nil,
+		WhatsAppEnabled: c.whatsAppJobs != nil,
 	}
 	page := 1
 	const pageSize = 100
@@ -314,12 +322,12 @@ func (c *notificationController) PublishVenueAnnouncement(ctx context.Context, t
 			now := timeNow()
 			channels := []string{models.NotificationChannelInApp}
 			if user.WhatsAppOptIn {
-				sent, sendErr := c.sendWhatsApp(ctx, user, c.whatsAppCfg.VenueAnnouncementTemplate, []string{title, message})
-				if sendErr != nil {
+				queued, queueErr := c.enqueueWhatsApp(ctx, user, c.whatsAppCfg.VenueAnnouncementTemplate, []string{title, message})
+				if queueErr != nil {
 					result.WhatsAppFailed++
-					log.Printf("notification: failed to send venue announcement to user %d: %v", user.ID, sendErr)
-				} else if sent {
-					result.WhatsAppSent++
+					log.Printf("notification: failed to queue venue announcement for user %d: %v", user.ID, queueErr)
+				} else if queued {
+					result.WhatsAppQueued++
 					channels = append(channels, models.NotificationChannelWA)
 				}
 				result.WhatsAppRecipients++
@@ -344,16 +352,21 @@ func (c *notificationController) PublishVenueAnnouncement(ctx context.Context, t
 	return result, nil
 }
 
-func (c *notificationController) sendWhatsApp(ctx context.Context, user *models.User, template string, parameters []string) (bool, error) {
+func (c *notificationController) enqueueWhatsApp(ctx context.Context, user *models.User, template string, parameters []string) (bool, error) {
 	if user == nil || !user.WhatsAppOptIn {
 		return false, nil
 	}
-	if c.whatsApp == nil {
-		return false, fmt.Errorf("WhatsApp Cloud API is not configured")
+	if c.whatsAppJobs == nil {
+		return false, fmt.Errorf("WhatsApp delivery outbox is not available")
 	}
-	sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err := c.whatsApp.SendTemplate(sendCtx, user.Phone, template, c.whatsAppCfg.Language, parameters); err != nil {
+	job := &models.WhatsAppJob{
+		UserID:       user.ID,
+		Template:     template,
+		Parameters:   append([]string(nil), parameters...),
+		ScheduledFor: timeNow(),
+		Status:       models.WhatsAppJobStatusScheduled,
+	}
+	if err := c.whatsAppJobs.Create(ctx, job); err != nil {
 		return false, err
 	}
 	return true, nil

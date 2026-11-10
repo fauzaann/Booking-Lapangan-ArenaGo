@@ -31,6 +31,14 @@ func (m *mockReminderRepo) FindDueJobs(ctx context.Context, now time.Time, limit
 	return m.dueJobs, nil
 }
 
+func (m *mockReminderRepo) ClaimDueJob(_ context.Context, id bson.ObjectID, _ time.Time) (bool, error) {
+	if m.statuses == nil {
+		m.statuses = make(map[string]string)
+	}
+	m.statuses[id.Hex()] = models.ReminderStatusProcessing
+	return true, nil
+}
+
 func (m *mockReminderRepo) UpdateStatus(ctx context.Context, id bson.ObjectID, status string, sentAt *time.Time, errMsg string) error {
 	if m.statuses == nil {
 		m.statuses = make(map[string]string)

@@ -95,8 +95,12 @@ func (w *ReminderWorker) runOnce(ctx context.Context) {
 	log.Printf("worker: processing %d due reminder job(s)", len(dueJobs))
 
 	for _, job := range dueJobs {
-		if err := w.reminderRepo.UpdateStatus(ctx, job.ID, models.ReminderStatusProcessing, nil, ""); err != nil {
+		claimed, err := w.reminderRepo.ClaimDueJob(ctx, job.ID, now)
+		if err != nil {
 			log.Printf("worker: failed to claim reminder job %s: %v", job.ID.Hex(), err)
+			continue
+		}
+		if !claimed {
 			continue
 		}
 		if job.ReminderType == models.ReminderTypePaymentDue && job.ExpiredAt != nil && !job.ExpiredAt.After(now) {
@@ -212,6 +216,8 @@ func (w *ReminderWorker) runOnce(ctx context.Context) {
 			}
 		} else if userOptedIn {
 			log.Printf("worker: WhatsApp reminder for user %d (booking %s) skipped because the provider is not configured", job.UserID, job.BookingCode)
+			w.retry(ctx, job, fmt.Errorf("WhatsApp Cloud API is not configured"))
+			continue
 		}
 
 		sentAt := time.Now()

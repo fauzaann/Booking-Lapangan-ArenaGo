@@ -22,7 +22,6 @@ import (
 	"Booking-Lapangan/pkg/fieldcache"
 	"Booking-Lapangan/pkg/jwt"
 	"Booking-Lapangan/pkg/validator"
-	"Booking-Lapangan/pkg/whatsapp"
 	"Booking-Lapangan/repository"
 	"Booking-Lapangan/router"
 	"Booking-Lapangan/worker"
@@ -104,6 +103,7 @@ func main() {
 	var (
 		notifRepo       repository.NotificationRepository
 		reminderRepo    repository.ReminderRepository
+		whatsAppJobs    repository.WhatsAppJobRepository
 		notifController controllers.NotificationController
 		notifHandler    *handler.NotificationHandler
 	)
@@ -120,6 +120,7 @@ func main() {
 
 		notifRepo = repository.NewNotificationRepository(mongoDB)
 		reminderRepo = repository.NewReminderRepository(mongoDB)
+		whatsAppJobs = repository.NewWhatsAppJobRepository(mongoDB)
 
 		// Buat index di MongoDB
 		indexCtx, indexCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -129,19 +130,21 @@ func main() {
 		if err := reminderRepo.EnsureIndexes(indexCtx); err != nil {
 			log.Printf("mongodb: failed to ensure reminder indexes: %v", err)
 		}
+		if err := whatsAppJobs.EnsureIndexes(indexCtx); err != nil {
+			log.Printf("mongodb: failed to ensure WhatsApp outbox indexes: %v", err)
+		}
 		indexCancel()
 	}
 
-	var whatsAppSender whatsapp.Sender
-	if cfg.WhatsApp.PhoneNumberID != "" && cfg.WhatsApp.AccessToken != "" {
-		whatsAppSender = whatsapp.NewClient(cfg.WhatsApp.PhoneNumberID, cfg.WhatsApp.AccessToken, cfg.WhatsApp.BaseURL)
-		log.Println("whatsapp: Cloud API notifications enabled")
-	} else {
-		log.Println("whatsapp: Cloud API credentials are not configured; WhatsApp notifications are disabled")
-	}
 	notifController = controllers.NewNotificationController(uow, notifRepo, reminderRepo, cfg.Mongo, controllers.NotificationOptions{
-		WhatsAppConfig: cfg.WhatsApp,
-		WhatsAppSender: whatsAppSender,
+		WhatsAppConfig: controllers.WhatsAppNotificationConfig{
+			PaymentReminderDelay:       cfg.WhatsApp.PaymentReminderDelay,
+			BookingConfirmedTemplate:   cfg.WhatsApp.BookingConfirmedTemplate,
+			BookingCancelledTemplate:   cfg.WhatsApp.BookingCancelledTemplate,
+			BookingRescheduledTemplate: cfg.WhatsApp.BookingRescheduledTemplate,
+			VenueAnnouncementTemplate:  cfg.WhatsApp.VenueAnnouncementTemplate,
+		},
+		WhatsAppJobs: whatsAppJobs,
 	})
 	notifHandler = handler.NewNotificationHandler(notifController, validate)
 
@@ -202,16 +205,6 @@ func main() {
 
 	expirer := worker.NewBookingExpirer(uow, time.Duration(cfg.Booking.ExpirerMinutes)*time.Minute)
 	go expirer.Start(ctx)
-
-	if reminderRepo != nil && notifRepo != nil {
-		reminderWorker := worker.NewReminderWorker(reminderRepo, notifRepo, cfg.Mongo.WorkerInterval, worker.ReminderWorkerOptions{
-			WhatsAppConfig:    cfg.WhatsApp,
-			WhatsAppSender:    whatsAppSender,
-			UserRepository:    uow.User(),
-			PaymentRepository: uow.Payment(),
-		})
-		go reminderWorker.Start(ctx)
-	}
 
 	go func() {
 		log.Printf("server: listening on http://localhost:%s (env=%s)", cfg.App.Port, cfg.App.Env)

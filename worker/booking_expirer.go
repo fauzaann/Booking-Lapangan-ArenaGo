@@ -1,4 +1,4 @@
-// Package worker berisi proses latar belakang yang berjalan bersama API.
+// Package worker berisi proses latar belakang untuk API dan notification worker.
 package worker
 
 import (

@@ -63,11 +63,12 @@ export default function AdminAnnouncements() {
           <div role="status" className="rounded-md border border-sage/30 bg-sage-tint p-4 text-sm text-ink">
             <p>Pengumuman diproses untuk {result.recipients} pengguna.</p>
             <p>
-              WhatsApp: {result.whatsapp_sent} terkirim, {result.whatsapp_failed} gagal dari {result.whatsapp_recipients} pengguna yang opt-in.
+              WhatsApp: {result.whatsapp_queued ?? 0} pesan masuk antrean, {result.whatsapp_failed} gagal diantrekan dari {result.whatsapp_recipients} pengguna yang opt-in.
             </p>
             {result.in_app_failed > 0 && <p>Notifikasi in-app gagal: {result.in_app_failed}.</p>}
             {!result.in_app_enabled && <p>MongoDB tidak aktif; notifikasi in-app tidak tersedia.</p>}
-            {!result.whatsapp_enabled && <p>WhatsApp belum aktif di server.</p>}
+            {!result.whatsapp_enabled && <p>Antrean WhatsApp tidak tersedia; pastikan koneksi MongoDB aktif.</p>}
+            {result.whatsapp_queued > 0 && <p>Pengiriman WhatsApp membutuhkan proses notification worker yang aktif.</p>}
           </div>
         )}
         <Button type="submit" disabled={sending}>

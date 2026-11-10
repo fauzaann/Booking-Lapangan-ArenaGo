@@ -25,6 +25,14 @@ Jalankan backend dari root repository:
 go run main.go
 ```
 
+Jalankan worker notifikasi pada terminal/proses terpisah:
+
+```bash
+go run ./cmd/notification-worker
+```
+
+Worker memproses pengingat dan antrean WhatsApp dari MongoDB. API tetap menangani endpoint inbox serta memasukkan pesan WhatsApp ke outbox; jalankan worker agar antrean dapat dikirim.
+
 Di terminal lain, jalankan frontend dari folder frontend:
 
 ```bash
@@ -177,6 +185,7 @@ Prinsip yang dijaga:
 ```
 booking-field/
 ├── main.go                     # entrypoint + dependency injection + graceful shutdown
+├── cmd/notification-worker/    # proses terpisah untuk pengingat & pengiriman WhatsApp
 ├── config/                     # env, koneksi database, client Xendit
 ├── database/                   # migration & seeder
 ├── internal/booking/           # kontrak/read model booking tanpa GORM
@@ -187,7 +196,7 @@ booking-field/
 ├── handler/                    # lapisan HTTP
 ├── middleware/                 # auth, role, logger, CORS, recovery
 ├── router/                     # pemetaan endpoint
-├── worker/                     # background job (expirer)
+├── worker/                     # background job (booking expirer & notifikasi)
 ├── pkg/
 │   ├── apperror/               # error domain + HTTP status
 │   ├── jwt/                    # generate & verify token
@@ -220,6 +229,10 @@ Relasi: `users 1—N bookings`, `fields 1—N bookings`, `fields 1—N schedules
 
 Harga paket saat ini: 2 jam mendapat diskon 5%; 3 jam atau lebih mendapat diskon 10%. API mengembalikan `original_price`, `discount_amount`, `discount_percent`, `package_name`, dan `total_price`. Nilai diskon dihitung server-side dan tagihan Xendit menggunakan total setelah diskon.
 
+MongoDB memakai koleksi `notifications` untuk inbox, `reminder_jobs` untuk pengingat terjadwal, dan `whatsapp_outbox` untuk pengiriman WhatsApp asinkron. Worker mengecek ulang persetujuan WhatsApp sebelum mengirim; job yang prosesnya terhenti dapat diklaim ulang setelah lease kedaluwarsa.
+
+Worker mengirim secara at-least-once: jika proses berhenti setelah provider menerima pesan tetapi sebelum status MongoDB diperbarui, pesan dapat terkirim ulang. Outbox MongoDB juga belum berada dalam transaksi yang sama dengan perubahan booking PostgreSQL; kegagalan enqueue dicatat oleh alur notifikasi, tetapi transactional outbox lintas database belum menjadi bagian tahap ini.
+
 Jam disimpan sebagai string `"HH:MM"` 24 jam agar perbandingan leksikografis di SQL identik dengan perbandingan kronologis.
 
 **Status booking:** `PENDING` → `WAITING_PAYMENT` → `PAID`/`CONFIRMED` → `COMPLETED`, dengan cabang `CANCELLED` dan `EXPIRED`.
@@ -242,7 +255,7 @@ XENDIT_WEBHOOK_TOKEN=<callback verification token dari dashboard Xendit>
 
 Redis untuk cache lapangan bersifat opsional. Default koneksi adalah `localhost:6379`; jika Redis belum tersedia, backend tetap berjalan dengan fallback PostgreSQL. Atur `REDIS_ADDR`, `REDIS_PASSWORD`, dan `REDIS_DB` untuk koneksi yang berbeda. `FIELD_CACHE_TTL_MINUTES` mengatur TTL (default 5 menit). Untuk mengaktifkan cache lokal, jalankan Redis di alamat tersebut sebelum backend; periksa log `redis: connected` saat startup.
 
-WhatsApp bersifat opsional dan menggunakan Meta WhatsApp Cloud API. Isi `WHATSAPP_PHONE_NUMBER_ID` dan `WHATSAPP_ACCESS_TOKEN` bersama-sama untuk mengaktifkannya. Siapkan dan setujui template pesan dengan nama yang dikonfigurasi pada `WHATSAPP_TEMPLATE_*`; urutan parameter template adalah:
+WhatsApp bersifat opsional dan menggunakan Meta WhatsApp Cloud API. Isi `WHATSAPP_PHONE_NUMBER_ID` dan `WHATSAPP_ACCESS_TOKEN` bersama-sama pada environment proses `notification-worker` untuk mengaktifkan pengiriman. Siapkan dan setujui template pesan dengan nama yang dikonfigurasi pada `WHATSAPP_TEMPLATE_*`; urutan parameter template adalah:
 
 - `payment_reminder`: nama, kode booking, nama lapangan, nominal, URL pembayaran
 - `booking_confirmed`: nama, kode booking, nama lapangan, tanggal, jam mulai, jam selesai
@@ -251,7 +264,7 @@ WhatsApp bersifat opsional dan menggunakan Meta WhatsApp Cloud API. Isi `WHATSAP
 - `match_reminder`: nama, nama lapangan, tanggal, jam mulai, jam selesai, tipe pengingat
 - `venue_announcement`: judul, isi pengumuman
 
-Pengguna tidak otomatis menerima WhatsApp: persetujuan dicentang saat pendaftaran atau dapat diubah dari profil. Pengingat pembayaran dijadwalkan 10 menit setelah invoice dibuat (hanya jika masih sebelum kedaluwarsa); ubah jedanya melalui `WHATSAPP_PAYMENT_REMINDER_DELAY_MINUTES`. Notifikasi in-app tetap tersedia terpisah. Pengumuman admin tersedia di `/admin/pengumuman` dan dikirim ke semua inbox; WhatsApp hanya ke pengguna yang opt-in. WhatsApp Cloud API mewajibkan penggunaan template yang telah disetujui Meta untuk pesan bisnis.
+Pengguna tidak otomatis menerima WhatsApp: persetujuan dicentang saat pendaftaran atau dapat diubah dari profil. Pengingat pembayaran dijadwalkan 10 menit setelah invoice dibuat (hanya jika masih sebelum kedaluwarsa); ubah jedanya melalui `WHATSAPP_PAYMENT_REMINDER_DELAY_MINUTES`. Notifikasi konfirmasi, pembatalan, perubahan jadwal, pengumuman, dan reminder WhatsApp diproses asinkron melalui koleksi MongoDB `whatsapp_outbox`; consent pengguna dicek kembali oleh worker sebelum pengiriman. Pengumuman admin tersedia di `/admin/pengumuman` dan dikirim ke semua inbox; WhatsApp hanya diantrekan untuk pengguna yang opt-in. Respons pengumuman menunjukkan jumlah pesan yang diantrekan, bukan yang sudah terkirim. WhatsApp Cloud API mewajibkan penggunaan template yang telah disetujui Meta untuk pesan bisnis.
 
 ## Instalasi & Menjalankan
 
@@ -269,6 +282,9 @@ createdb booking_field
 
 # jalankan
 go run .
+
+# terminal/proses terpisah untuk pengingat dan antrean WhatsApp
+go run ./cmd/notification-worker
 ```
 
 Server berjalan di `http://localhost:8080`. Migrasi berjalan otomatis (`APP_AUTO_MIGRATE=true`), seeder berjalan bila `RUN_SEEDER=true`.
@@ -300,6 +316,8 @@ docker compose up --build
 ```
 
 Compose menjalankan dua service: `postgres` (dengan healthcheck) dan `app`. Aplikasi baru start setelah database siap.
+
+Untuk produksi, jalankan `go run ./cmd/notification-worker` sebagai proses/container terpisah yang terhubung ke PostgreSQL dan MongoDB. Berikan kredensial WhatsApp hanya ke proses worker; jalankan satu atau lebih worker, yang mengklaim job secara atomik.
 
 ```bash
 docker compose down -v   # hentikan dan hapus volume

@@ -18,6 +18,7 @@ type ReminderRepository interface {
 	CreateJobs(ctx context.Context, jobs []models.ReminderJob) error
 	RescheduleJobs(ctx context.Context, bookingID uint, jobs []models.ReminderJob) error
 	FindDueJobs(ctx context.Context, now time.Time, limit int64) ([]models.ReminderJob, error)
+	ClaimDueJob(ctx context.Context, id bson.ObjectID, now time.Time) (bool, error)
 	UpdateStatus(ctx context.Context, id bson.ObjectID, status string, sentAt *time.Time, errMsg string) error
 	MarkInAppSent(ctx context.Context, id bson.ObjectID) error
 	IncrementRetry(ctx context.Context, id bson.ObjectID, errMsg string) error
@@ -57,7 +58,15 @@ func (r *reminderRepository) EnsureIndexes(ctx context.Context) error {
 		Options: options.Index().SetName("idx_status_scheduled_for"),
 	}
 
-	_, err := r.coll.Indexes().CreateMany(ctx, []mongo.IndexModel{uniqueModel, statusModel})
+	leaseModel := mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "status", Value: 1},
+			{Key: "updated_at", Value: 1},
+		},
+		Options: options.Index().SetName("idx_status_updated_at"),
+	}
+
+	_, err := r.coll.Indexes().CreateMany(ctx, []mongo.IndexModel{uniqueModel, statusModel, leaseModel})
 	return err
 }
 
@@ -161,9 +170,12 @@ func (r *reminderRepository) FindDueJobs(ctx context.Context, now time.Time, lim
 		limit = 50
 	}
 
+	staleBefore := now.Add(-5 * time.Minute)
 	filter := bson.M{
-		"status":        models.ReminderStatusScheduled,
-		"scheduled_for": bson.M{"$lte": now},
+		"$or": bson.A{
+			bson.M{"status": models.ReminderStatusScheduled, "scheduled_for": bson.M{"$lte": now}},
+			bson.M{"status": models.ReminderStatusProcessing, "updated_at": bson.M{"$lte": staleBefore}},
+		},
 	}
 
 	findOpts := options.Find().
@@ -182,6 +194,24 @@ func (r *reminderRepository) FindDueJobs(ctx context.Context, now time.Time, lim
 	}
 
 	return results, nil
+}
+
+func (r *reminderRepository) ClaimDueJob(ctx context.Context, id bson.ObjectID, now time.Time) (bool, error) {
+	staleBefore := now.Add(-5 * time.Minute)
+	result, err := r.coll.UpdateOne(ctx, bson.M{
+		"_id": id,
+		"$or": bson.A{
+			bson.M{"status": models.ReminderStatusScheduled, "scheduled_for": bson.M{"$lte": now}},
+			bson.M{"status": models.ReminderStatusProcessing, "updated_at": bson.M{"$lte": staleBefore}},
+		},
+	}, bson.M{"$set": bson.M{
+		"status":     models.ReminderStatusProcessing,
+		"updated_at": now,
+	}})
+	if err != nil {
+		return false, err
+	}
+	return result.MatchedCount == 1, nil
 }
 
 // UpdateStatus memperbarui status job pengingat.

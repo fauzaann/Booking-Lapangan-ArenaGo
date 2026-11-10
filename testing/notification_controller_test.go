@@ -20,6 +20,32 @@ type mockReminderRepo struct {
 	statusUpdates map[string]string
 }
 
+type mockWhatsAppJobRepo struct {
+	jobs []models.WhatsAppJob
+	err  error
+}
+
+func (r *mockWhatsAppJobRepo) Create(_ context.Context, job *models.WhatsAppJob) error {
+	if r.err != nil {
+		return r.err
+	}
+	r.jobs = append(r.jobs, *job)
+	return nil
+}
+
+func (r *mockWhatsAppJobRepo) FindDue(context.Context, time.Time, int64) ([]models.WhatsAppJob, error) {
+	return nil, nil
+}
+
+func (r *mockWhatsAppJobRepo) Claim(context.Context, bson.ObjectID, time.Time) (bool, error) {
+	return false, nil
+}
+
+func (r *mockWhatsAppJobRepo) MarkSent(context.Context, bson.ObjectID, time.Time) error { return nil }
+func (r *mockWhatsAppJobRepo) Cancel(context.Context, bson.ObjectID, string) error      { return nil }
+func (r *mockWhatsAppJobRepo) Retry(context.Context, bson.ObjectID, string) error       { return nil }
+func (r *mockWhatsAppJobRepo) EnsureIndexes(context.Context) error                      { return nil }
+
 func newMockReminderRepo() *mockReminderRepo {
 	return &mockReminderRepo{
 		statusUpdates: make(map[string]string),
@@ -40,6 +66,10 @@ func (m *mockReminderRepo) RescheduleJobs(ctx context.Context, bookingID uint, j
 
 func (m *mockReminderRepo) FindDueJobs(ctx context.Context, now time.Time, limit int64) ([]models.ReminderJob, error) {
 	return nil, nil
+}
+
+func (m *mockReminderRepo) ClaimDueJob(context.Context, bson.ObjectID, time.Time) (bool, error) {
+	return false, nil
 }
 
 func (m *mockReminderRepo) UpdateStatus(ctx context.Context, id bson.ObjectID, status string, sentAt *time.Time, errMsg string) error {
@@ -225,15 +255,6 @@ func (r *announcementUserRepo) FindAll(_ context.Context, params repository.List
 	return r.users[start:end], int64(len(r.users)), nil
 }
 
-type announcementWhatsAppSender struct {
-	recipients []string
-}
-
-func (s *announcementWhatsAppSender) SendTemplate(_ context.Context, recipient, _, _ string, _ []string) error {
-	s.recipients = append(s.recipients, recipient)
-	return nil
-}
-
 func TestScheduleRemindersForBooking(t *testing.T) {
 	baseTime := time.Now()
 	bookingDate := time.Date(baseTime.Year(), baseTime.Month(), baseTime.Day()+5, 0, 0, 0, 0, baseTime.Location())
@@ -413,17 +434,18 @@ func TestPublishVenueAnnouncementSendsInAppToAllAndWhatsAppOnlyToOptedInUsers(t 
 	}}
 	uow := &mockUOW{userRepo: users}
 	notifRepo := newMockNotifRepo()
-	sender := &announcementWhatsAppSender{}
+	whatsAppJobs := &mockWhatsAppJobRepo{}
 	controller := controllers.NewNotificationController(uow, notifRepo, nil, config.MongoConfig{}, controllers.NotificationOptions{
-		WhatsAppConfig: config.WhatsAppConfig{Language: "id", VenueAnnouncementTemplate: "venue_announcement"},
-		WhatsAppSender: sender,
+		WhatsAppConfig: controllers.WhatsAppNotificationConfig{VenueAnnouncementTemplate: "venue_announcement"},
+		WhatsAppJobs:   whatsAppJobs,
 	})
 
 	result, err := controller.PublishVenueAnnouncement(context.Background(), "Info venue", "Jadwal libur pada Senin.")
 	if err != nil {
 		t.Fatalf("PublishVenueAnnouncement() error = %v", err)
 	}
-	if result.Recipients != 2 || result.WhatsAppRecipients != 1 || result.WhatsAppSent != 1 || result.WhatsAppFailed != 0 {
+	if result.Recipients != 2 || result.WhatsAppRecipients != 1 || result.WhatsAppQueued != 1 ||
+		result.WhatsAppSent != 0 || result.WhatsAppFailed != 0 {
 		t.Fatalf("unexpected announcement results: %+v", result)
 	}
 	if len(notifRepo.notifications) != 2 {
@@ -433,8 +455,11 @@ func TestPublishVenueAnnouncementSendsInAppToAllAndWhatsAppOnlyToOptedInUsers(t 
 		notifRepo.notifications[1].Channels[1] != models.NotificationChannelWA {
 		t.Fatalf("unexpected announcement channels: %+v", notifRepo.notifications)
 	}
-	if len(sender.recipients) != 1 || sender.recipients[0] != "+628222222222" {
-		t.Fatalf("unexpected WhatsApp recipients: %v", sender.recipients)
+	if len(whatsAppJobs.jobs) != 1 || whatsAppJobs.jobs[0].UserID != 2 ||
+		whatsAppJobs.jobs[0].Template != "venue_announcement" ||
+		len(whatsAppJobs.jobs[0].Parameters) != 2 ||
+		whatsAppJobs.jobs[0].Parameters[0] != "Info venue" {
+		t.Fatalf("unexpected WhatsApp jobs: %+v", whatsAppJobs.jobs)
 	}
 }
 
@@ -450,7 +475,7 @@ func TestSchedulePaymentReminderCreatesOneDelayedJob(t *testing.T) {
 	controller := controllers.NewNotificationController(
 		&mockUOW{bookingRepo: &mockBookingRepo{booking: booking}},
 		nil, reminders, config.MongoConfig{},
-		controllers.NotificationOptions{WhatsAppConfig: config.WhatsAppConfig{PaymentReminderDelay: 10 * time.Minute}},
+		controllers.NotificationOptions{WhatsAppConfig: controllers.WhatsAppNotificationConfig{PaymentReminderDelay: 10 * time.Minute}},
 	)
 	expiresAt := time.Now().Add(time.Hour)
 
