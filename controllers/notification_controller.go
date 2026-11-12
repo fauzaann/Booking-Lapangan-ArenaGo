@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"Booking-Lapangan/config"
+	notificationv1 "Booking-Lapangan/contracts/notification/v1"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/timeutil"
@@ -52,7 +54,7 @@ type NotificationController interface {
 	MarkAsRead(ctx context.Context, notifIDHex string, userID uint) error
 	MarkAllAsRead(ctx context.Context, userID uint) error
 	ListReminderJobs(ctx context.Context, page, limit int, status string) ([]models.ReminderJob, int64, error)
-	HandleOutboxEvent(ctx context.Context, event models.NotificationEvent) error
+	HandleOutboxEvent(ctx context.Context, event notificationv1.Envelope) error
 }
 
 type notificationController struct {
@@ -85,22 +87,62 @@ func NewNotificationController(
 	return controller
 }
 
-func (c *notificationController) HandleOutboxEvent(ctx context.Context, event models.NotificationEvent) error {
-	switch event.EventType {
-	case models.NotificationEventBookingConfirmed:
-		return c.ScheduleRemindersForBooking(ctx, event.BookingID)
-	case models.NotificationEventBookingCancelled:
-		return c.CancelRemindersForBooking(ctx, event.BookingID)
-	case models.NotificationEventBookingRescheduled:
-		return c.RescheduleBooking(ctx, event.BookingID)
-	case models.NotificationEventPaymentInvoiceReady:
-		if event.ExpiresAt == nil {
-			return fmt.Errorf("payment invoice ready event %d has no expiry time", event.ID)
-		}
-		return c.SchedulePaymentReminder(ctx, event.BookingID, event.PaymentURL, *event.ExpiresAt)
-	default:
-		return fmt.Errorf("unsupported notification outbox event type %q", event.EventType)
+func (c *notificationController) HandleOutboxEvent(ctx context.Context, event notificationv1.Envelope) error {
+	if err := event.Validate(); err != nil {
+		return fmt.Errorf("invalid notification event %q: %w", event.ID, err)
 	}
+	switch event.Type {
+	case notificationv1.EventBookingConfirmed:
+		data, err := event.BookingReference()
+		if err != nil {
+			return err
+		}
+		bookingID, err := parseNotificationBookingID(data.BookingID)
+		if err != nil {
+			return err
+		}
+		return c.ScheduleRemindersForBooking(ctx, bookingID)
+	case notificationv1.EventBookingCancelled:
+		data, err := event.BookingReference()
+		if err != nil {
+			return err
+		}
+		bookingID, err := parseNotificationBookingID(data.BookingID)
+		if err != nil {
+			return err
+		}
+		return c.CancelRemindersForBooking(ctx, bookingID)
+	case notificationv1.EventBookingRescheduled:
+		data, err := event.BookingReference()
+		if err != nil {
+			return err
+		}
+		bookingID, err := parseNotificationBookingID(data.BookingID)
+		if err != nil {
+			return err
+		}
+		return c.RescheduleBooking(ctx, bookingID)
+	case notificationv1.EventPaymentInvoiceReady:
+		data, err := event.PaymentInvoiceReady()
+		if err != nil {
+			return err
+		}
+		bookingID, err := parseNotificationBookingID(data.BookingID)
+		if err != nil {
+			return err
+		}
+		return c.SchedulePaymentReminder(ctx, bookingID, data.PaymentURL, data.ExpiresAt)
+	default:
+		return fmt.Errorf("unsupported notification event type %q", event.Type)
+	}
+}
+
+func parseNotificationBookingID(value string) (uint, error) {
+	id, err := strconv.ParseUint(value, 10, strconv.IntSize)
+	if err != nil || id == 0 {
+		return 0, fmt.Errorf("invalid notification event booking_id %q", value)
+	}
+	return uint(id), nil
 }
 
 // ScheduleRemindersForBooking membuat dokumen pengingat H-24 dan H-2 jam di MongoDB saat booking CONFIRMED.

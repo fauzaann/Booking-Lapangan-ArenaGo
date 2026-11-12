@@ -207,6 +207,8 @@ booking-field/
 │   ├── timeutil/               # parsing & perhitungan jam booking
 │   ├── validator/              # validator + rule kustom (clock, dateonly, notpast)
 │   └── xendit/                 # client Invoice API
+├── contracts/
+│   └── notification/v1/        # versioned JSON event contract (no DB model dependencies)
 ├── docs/                       # openapi.yaml + Swagger UI
 ├── Dockerfile
 ├── docker-compose.yml
@@ -235,6 +237,8 @@ Harga paket saat ini: 2 jam mendapat diskon 5%; 3 jam atau lebih mendapat diskon
 MongoDB memakai koleksi `notifications` untuk inbox, `reminder_jobs` untuk pengingat terjadwal, dan `whatsapp_outbox` untuk pengiriman WhatsApp asinkron. Worker mengecek ulang persetujuan WhatsApp sebelum mengirim; job yang prosesnya terhenti dapat diklaim ulang setelah lease kedaluwarsa.
 
 Perubahan status booking dan pembayaran yang memicu notifikasi (invoice siap, pembayaran/booking dikonfirmasi, pembatalan, dan reschedule) menulis event ke tabel `notification_events` dalam transaksi PostgreSQL yang sama. Worker mengklaim event secara atomik, mencoba ulang dengan jeda eksponensial hingga lima kali, dan mengambil kembali event yang lease-nya kedaluwarsa. Penerusan dari PostgreSQL ke MongoDB serta pengiriman provider tetap at-least-once: crash setelah efek di MongoDB/provider tetapi sebelum event ditandai selesai dapat menyebabkan pemrosesan/pesan duplikat. PostgreSQL dan MongoDB tidak berada dalam satu transaksi terdistribusi.
+
+Event notifikasi memakai kontrak JSON berversi yang tidak mengekspos entity GORM. Daftar event, bentuk payload, dan kebijakan evolusinya didokumentasikan di [`docs/events/notification-v1.md`](docs/events/notification-v1.md); tipe Go kontrak ada di `contracts/notification/v1`. Saat ini notification handler masih membaca detail booking melalui repository monolith menggunakan `booking_id`. Sebelum dipisah menjadi service independen, ganti lookup tersebut dengan API booking internal atau tambahkan snapshot minimum yang sudah ditinjau privasinya ke event.
 
 Jam disimpan sebagai string `"HH:MM"` 24 jam agar perbandingan leksikografis di SQL identik dengan perbandingan kronologis.
 
