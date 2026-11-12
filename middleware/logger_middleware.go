@@ -43,6 +43,10 @@ func RequestLogger() gin.HandlerFunc {
 // AuditLogger menyimpan jejak setiap request, termasuk request tanpa actor.
 func AuditLogger(audit repository.AuditLogRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if c.Request.URL.Path == "/health" || c.Request.URL.Path == "/ready" || c.Request.URL.Path == "/metrics" {
+			c.Next()
+			return
+		}
 		started := time.Now()
 		c.Next()
 

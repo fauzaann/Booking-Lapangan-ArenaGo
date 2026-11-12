@@ -21,6 +21,7 @@ import (
 	"Booking-Lapangan/handler"
 	"Booking-Lapangan/pkg/fieldcache"
 	"Booking-Lapangan/pkg/jwt"
+	"Booking-Lapangan/pkg/observability"
 	"Booking-Lapangan/pkg/validator"
 	"Booking-Lapangan/repository"
 	"Booking-Lapangan/router"
@@ -77,6 +78,22 @@ func main() {
 	if *seedOnly {
 		return
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("database: failed to get sql.DB: %v", err)
+	}
+	telemetry, err := observability.New(context.Background())
+	if err != nil {
+		log.Fatalf("observability: %v", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := telemetry.Shutdown(shutdownCtx); err != nil {
+			log.Printf("observability: failed to shut down tracing: %v", err)
+		}
+	}()
 
 	// ---------- dependency injection ----------
 	uow := repository.NewUnitOfWork(db)
@@ -170,20 +187,33 @@ func main() {
 	adminController := controllers.NewAdminController(uow)
 
 	engine := router.New(router.Dependencies{
-		Config:       cfg,
-		JWT:          tokens,
-		Auth:         handler.NewAuthHandler(authController, validate),
-		User:         handler.NewUserHandler(authController, adminController, validate),
-		Field:        handler.NewFieldHandler(fieldController, validate),
-		Schedule:     handler.NewScheduleHandler(fieldController, validate),
-		Booking:      handler.NewBookingHandler(bookingController, validate),
-		Checkout:     handler.NewCheckoutHandler(checkoutController, validate),
-		Payment:      handler.NewPaymentHandler(paymentController, validate),
-		Assistant:    handler.NewAssistantHandler(controllers.NewAssistantController(assistant), validate),
-		Admin:        handler.NewAdminHandler(adminController, validate),
-		Notification: notifHandler,
-		Rating:       handler.NewRatingHandler(ratingController, validate),
-		AuditLog:     uow.AuditLog(),
+		Config:        cfg,
+		JWT:           tokens,
+		Auth:          handler.NewAuthHandler(authController, validate),
+		User:          handler.NewUserHandler(authController, adminController, validate),
+		Field:         handler.NewFieldHandler(fieldController, validate),
+		Schedule:      handler.NewScheduleHandler(fieldController, validate),
+		Booking:       handler.NewBookingHandler(bookingController, validate),
+		Checkout:      handler.NewCheckoutHandler(checkoutController, validate),
+		Payment:       handler.NewPaymentHandler(paymentController, validate),
+		Assistant:     handler.NewAssistantHandler(controllers.NewAssistantController(assistant), validate),
+		Admin:         handler.NewAdminHandler(adminController, validate),
+		Notification:  notifHandler,
+		Rating:        handler.NewRatingHandler(ratingController, validate),
+		AuditLog:      uow.AuditLog(),
+		Observability: telemetry,
+		Readiness: []router.ReadinessCheck{
+			{Name: "postgres", Required: true, Check: func(ctx context.Context) error { return sqlDB.PingContext(ctx) }},
+			{Name: "mongodb", Required: false, Check: func(ctx context.Context) error {
+				if mongoClient == nil {
+					return mongoErr
+				}
+				return mongoClient.Ping(ctx, nil)
+			}},
+			{Name: "redis", Required: false, Check: func(ctx context.Context) error {
+				return config.PingRedis(ctx, redisClient)
+			}},
+		},
 	})
 
 	server := &http.Server{
@@ -197,6 +227,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go telemetry.StartOutboxCollector(ctx, db, mongoDB)
 
 	expirer := worker.NewBookingExpirer(uow, time.Duration(cfg.Booking.ExpirerMinutes)*time.Minute)
 	go expirer.Start(ctx)

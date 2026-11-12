@@ -2,7 +2,9 @@
 package router
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,27 +14,36 @@ import (
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/jwt"
+	"Booking-Lapangan/pkg/observability"
 	"Booking-Lapangan/pkg/response"
 	"Booking-Lapangan/repository"
 )
 
+type ReadinessCheck struct {
+	Name     string
+	Required bool
+	Check    func(context.Context) error
+}
+
 // Dependencies adalah seluruh komponen yang dibutuhkan router.
 // Semua di-inject dari main.go (dependency injection).
 type Dependencies struct {
-	Config       *config.Config
-	JWT          jwt.Manager
-	Auth         *handler.AuthHandler
-	User         *handler.UserHandler
-	Field        *handler.FieldHandler
-	Schedule     *handler.ScheduleHandler
-	Booking      *handler.BookingHandler
-	Checkout     *handler.CheckoutHandler
-	Payment      *handler.PaymentHandler
-	Assistant    *handler.AssistantHandler
-	Admin        *handler.AdminHandler
-	Notification *handler.NotificationHandler
-	Rating       *handler.RatingHandler
-	AuditLog     repository.AuditLogRepository
+	Config        *config.Config
+	JWT           jwt.Manager
+	Auth          *handler.AuthHandler
+	User          *handler.UserHandler
+	Field         *handler.FieldHandler
+	Schedule      *handler.ScheduleHandler
+	Booking       *handler.BookingHandler
+	Checkout      *handler.CheckoutHandler
+	Payment       *handler.PaymentHandler
+	Assistant     *handler.AssistantHandler
+	Admin         *handler.AdminHandler
+	Notification  *handler.NotificationHandler
+	Rating        *handler.RatingHandler
+	AuditLog      repository.AuditLogRepository
+	Readiness     []ReadinessCheck
+	Observability *observability.Observability
 }
 
 // New menyusun seluruh route aplikasi.
@@ -46,6 +57,10 @@ func New(deps Dependencies) *gin.Engine {
 	engine.Use(middleware.RequestLogger())
 	engine.Use(middleware.AuditLogger(deps.AuditLog))
 	engine.Use(middleware.CORS(deps.Config.App.AllowedOrigins))
+	if deps.Observability != nil {
+		engine.Use(deps.Observability.Middleware())
+		engine.GET("/metrics", deps.Observability.MetricsHandler())
+	}
 
 	engine.NoRoute(func(c *gin.Context) {
 		response.Error(c, apperror.NotFound("endpoint not found"))
@@ -57,6 +72,7 @@ func New(deps Dependencies) *gin.Engine {
 	engine.GET("/health", func(c *gin.Context) {
 		response.OK(c, "Service is healthy", gin.H{"status": "ok", "env": deps.Config.App.Env})
 	})
+	engine.GET("/ready", readinessHandler(deps.Readiness))
 
 	authenticated := middleware.Authenticate(deps.JWT)
 	adminOnly := middleware.RequireRole(models.RoleAdmin)
@@ -159,4 +175,42 @@ func New(deps Dependencies) *gin.Engine {
 	}
 
 	return engine
+}
+
+func readinessHandler(dependencies []ReadinessCheck) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		type checkResult struct {
+			Status   string `json:"status"`
+			Required bool   `json:"required"`
+		}
+		checks := make(map[string]checkResult, len(dependencies))
+		ready := true
+		degraded := false
+		for _, dependency := range dependencies {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+			err := dependency.Check(ctx)
+			cancel()
+			status := "ok"
+			if err != nil {
+				status = "unavailable"
+				if dependency.Required {
+					ready = false
+				} else {
+					degraded = true
+				}
+			}
+			checks[dependency.Name] = checkResult{Status: status, Required: dependency.Required}
+		}
+		status := "ready"
+		if !ready {
+			status = "not_ready"
+		} else if degraded {
+			status = "degraded"
+		}
+		httpStatus := http.StatusOK
+		if !ready {
+			httpStatus = http.StatusServiceUnavailable
+		}
+		c.JSON(httpStatus, gin.H{"status": status, "checks": checks})
+	}
 }

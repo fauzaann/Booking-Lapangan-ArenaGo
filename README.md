@@ -133,6 +133,7 @@ UI otomatis memakai gradient fallback.
 - QR check-in memakai token acak, hanya diterbitkan untuk booking terbayar dan dikonfirmasi
 - Worker background: booking kedaluwarsa → `EXPIRED`, booking selesai → `COMPLETED`
 - Response JSON konsisten, centralized error handling, request logging
+- Readiness dependency pada `/ready`, metrik Prometheus pada `/metrics`, serta distributed tracing OTLP/HTTP opsional
 
 ## Tech Stack
 
@@ -150,6 +151,7 @@ UI otomatis memakai gradient fallback.
 | Chatbot Assistant | OpenRouter API |
 | Dokumentasi | OpenAPI 3.0 + Swagger UI |
 | Container | Docker + Docker Compose |
+| Observability | Prometheus metrics + OpenTelemetry OTLP/HTTP tracing (opsional) |
 
 ## Arsitektur
 
@@ -319,6 +321,15 @@ docker compose up --build
 Compose menjalankan dua service: `postgres` (dengan healthcheck) dan `app`. Aplikasi baru start setelah database siap.
 
 Untuk produksi, jalankan `go run ./cmd/notification-worker` sebagai proses/container terpisah yang terhubung ke PostgreSQL dan MongoDB. Berikan kredensial WhatsApp hanya ke proses worker; jalankan satu atau lebih worker, yang mengklaim job secara atomik.
+
+### Health check, metrics, dan tracing
+
+- `GET /health` adalah liveness check dan tetap menjawab jika dependency eksternal sedang bermasalah.
+- `GET /ready` memeriksa PostgreSQL (wajib), MongoDB, dan Redis. PostgreSQL yang tidak tersedia menghasilkan HTTP `503`; MongoDB/Redis yang tidak tersedia ditandai `degraded` karena keduanya opsional untuk menjalankan API.
+- `GET /metrics` menampilkan metrik Prometheus untuk jumlah dan durasi request, konflik booking/checkout, kegagalan operasi pembayaran, jumlah event outbox PostgreSQL dan WhatsApp/MongoDB per status, serta umur event antrean tertua yang belum selesai.
+- Untuk mengekspor distributed trace, isi `OTEL_EXPORTER_OTLP_ENDPOINT` dengan endpoint receiver OTLP melalui HTTP, misalnya `http://localhost:4318`. `OTEL_SERVICE_NAME` mengatur nama service (default `arenago-api`). Tanpa endpoint, trace tidak diekspor.
+
+Alert dapat dibuat di Prometheus/Grafana berdasarkan kenaikan `arenago_payment_operation_failures_total`, `arenago_booking_conflicts_total`, jumlah `arenago_notification_outbox_events{status="failed"}`, dan umur antrean `arenago_notification_outbox_oldest_pending_age_seconds`. Gunakan label `source="postgres"` atau `source="mongodb"` untuk membedakan antrean. Konflik booking adalah sinyal bisnis yang dapat meningkat saat kompetisi slot tinggi; atur alert sebagai ambang investigasi, bukan otomatis sebagai gangguan layanan. Batasi akses `/metrics` di reverse proxy/firewall hanya untuk sistem monitoring.
 
 ```bash
 docker compose down -v   # hentikan dan hapus volume
