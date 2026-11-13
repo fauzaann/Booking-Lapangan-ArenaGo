@@ -23,6 +23,7 @@ type Config struct {
 	Mongo      MongoConfig
 	WhatsApp   WhatsAppConfig
 	Redis      RedisConfig
+	RabbitMQ   RabbitMQConfig
 }
 
 // AppConfig berisi konfigurasi umum aplikasi.
@@ -122,6 +123,19 @@ type RedisConfig struct {
 	CacheTTL time.Duration
 }
 
+type RabbitMQConfig struct {
+	URL                string
+	Exchange           string
+	Queue              string
+	RetryExchange      string
+	RetryQueue         string
+	DeadLetterExchange string
+	DeadLetterQueue    string
+	RetryDelay         time.Duration
+	MaxRetries         int
+	PublisherInterval  time.Duration
+}
+
 // Load membaca file .env (jika ada) lalu environment variable.
 func Load() (*Config, error) {
 	return load(true, false)
@@ -131,6 +145,10 @@ func Load() (*Config, error) {
 // without requiring API-only secrets such as JWT and Xendit configuration.
 func LoadNotificationWorker() (*Config, error) {
 	return load(false, true)
+}
+
+func LoadOutboxPublisher() (*Config, error) {
+	return load(false, false)
 }
 
 func load(validate, includeWhatsAppCredentials bool) (*Config, error) {
@@ -204,6 +222,18 @@ func load(validate, includeWhatsAppCredentials bool) (*Config, error) {
 			Password: getEnv("REDIS_PASSWORD", ""),
 			DB:       getEnvInt("REDIS_DB", 0),
 			CacheTTL: time.Duration(getEnvInt("FIELD_CACHE_TTL_MINUTES", 5)) * time.Minute,
+		},
+		RabbitMQ: RabbitMQConfig{
+			URL:                getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
+			Exchange:           getEnv("RABBITMQ_EXCHANGE", "arenago.events"),
+			Queue:              getEnv("RABBITMQ_NOTIFICATION_QUEUE", "arenago.notification.events"),
+			RetryExchange:      getEnv("RABBITMQ_RETRY_EXCHANGE", "arenago.events.retry"),
+			RetryQueue:         getEnv("RABBITMQ_RETRY_QUEUE", "arenago.notification.retry"),
+			DeadLetterExchange: getEnv("RABBITMQ_DLX_EXCHANGE", "arenago.events.dlx"),
+			DeadLetterQueue:    getEnv("RABBITMQ_DEAD_LETTER_QUEUE", "arenago.notification.dead"),
+			RetryDelay:         time.Duration(getEnvInt("RABBITMQ_RETRY_DELAY_SECONDS", 30)) * time.Second,
+			MaxRetries:         getEnvInt("RABBITMQ_MAX_RETRIES", 5),
+			PublisherInterval:  time.Duration(getEnvInt("OUTBOX_PUBLISHER_INTERVAL_SECONDS", 1)) * time.Second,
 		},
 	}
 	if includeWhatsAppCredentials {

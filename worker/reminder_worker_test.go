@@ -68,16 +68,6 @@ func (m *mockReminderRepo) EnsureIndexes(ctx context.Context) error {
 	return nil
 }
 
-type mockReminderPaymentRepo struct {
-	repository.PaymentRepository
-	payment *models.Payment
-	err     error
-}
-
-func (m *mockReminderPaymentRepo) FindByBookingID(context.Context, uint) (*models.Payment, error) {
-	return m.payment, m.err
-}
-
 type mockReminderUserRepo struct {
 	repository.UserRepository
 	user *models.User
@@ -201,13 +191,10 @@ func TestReminderWorkerSendsPaymentReminderAndChecksCurrentConsent(t *testing.T)
 	userRepo := &mockReminderUserRepo{user: &models.User{
 		ID: 7, Name: "Rizki", Phone: "+6281234567890", WhatsAppOptIn: true,
 	}}
-	paymentRepo := &mockReminderPaymentRepo{payment: &models.Payment{Status: models.PaymentStatusPending}}
-
 	w := NewReminderWorker(mockReminder, mockNotif, time.Second, ReminderWorkerOptions{
-		WhatsAppConfig:    config.WhatsAppConfig{Language: "id", PaymentReminderTemplate: "payment_reminder"},
-		WhatsAppSender:    sender,
-		UserRepository:    userRepo,
-		PaymentRepository: paymentRepo,
+		WhatsAppConfig: config.WhatsAppConfig{Language: "id", PaymentReminderTemplate: "payment_reminder"},
+		WhatsAppSender: sender,
+		UserRepository: userRepo,
 	})
 	w.runOnce(context.Background())
 
@@ -228,18 +215,17 @@ func TestReminderWorkerSendsPaymentReminderAndChecksCurrentConsent(t *testing.T)
 	}
 }
 
-func TestReminderWorkerCancelsPaymentReminderAfterPayment(t *testing.T) {
+func TestReminderWorkerCancelsExpiredPaymentReminder(t *testing.T) {
 	jobID := bson.NewObjectID()
 	mockReminder := &mockReminderRepo{dueJobs: []models.ReminderJob{{
 		ID: jobID, BookingID: 51, BookingCode: "AG-PAY-002", UserID: 7,
 		ReminderType: models.ReminderTypePaymentDue,
-		ScheduledFor: time.Now().Add(-time.Minute), ExpiredAt: timePointer(time.Now().Add(time.Hour)),
+		ScheduledFor: time.Now().Add(-time.Minute), ExpiredAt: timePointer(time.Now().Add(-time.Minute)),
 	}}}
 	mockNotif := &mockNotifRepo{}
 	sender := &mockReminderWhatsAppSender{}
 	w := NewReminderWorker(mockReminder, mockNotif, time.Second, ReminderWorkerOptions{
-		WhatsAppSender:    sender,
-		PaymentRepository: &mockReminderPaymentRepo{payment: &models.Payment{Status: models.PaymentStatusPaid}},
+		WhatsAppSender: sender,
 	})
 
 	w.runOnce(context.Background())

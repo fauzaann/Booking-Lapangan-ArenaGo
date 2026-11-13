@@ -28,23 +28,42 @@ type Envelope struct {
 	Data       json.RawMessage `json:"data"`
 }
 
-// BookingReference is the minimum booking-owned data currently required by
-// the notification service to retrieve its notification details.
+// BookingReference is the booking snapshot required to process an event
+// without querying the booking or payment database.
 type BookingReference struct {
-	BookingID string `json:"booking_id"`
+	Booking BookingSnapshot `json:"booking"`
+}
+
+type BookingSnapshot struct {
+	BookingID            string  `json:"booking_id"`
+	BookingCode          string  `json:"booking_code"`
+	UserID               string  `json:"user_id"`
+	UserName             string  `json:"user_name"`
+	UserEmail            string  `json:"user_email"`
+	UserPhone            string  `json:"user_phone"`
+	UserWhatsAppOptIn    bool    `json:"user_whatsapp_opt_in"`
+	FieldID              string  `json:"field_id"`
+	FieldName            string  `json:"field_name"`
+	BookingDate          string  `json:"booking_date"`
+	StartTime            string  `json:"start_time"`
+	EndTime              string  `json:"end_time"`
+	Duration             int     `json:"duration"`
+	TotalPrice           float64 `json:"total_price"`
+	Status               string  `json:"status"`
+	RefundReviewRequired bool    `json:"refund_review_required"`
 }
 
 type PaymentInvoiceReadyData struct {
-	BookingID  string    `json:"booking_id"`
-	PaymentURL string    `json:"payment_url"`
-	ExpiresAt  time.Time `json:"expires_at"`
+	Booking    BookingSnapshot `json:"booking"`
+	PaymentURL string          `json:"payment_url"`
+	ExpiresAt  time.Time       `json:"expires_at"`
 }
 
-func NewBookingEvent(id string, eventType EventType, occurredAt time.Time, bookingID string) (Envelope, error) {
+func NewBookingEvent(id string, eventType EventType, occurredAt time.Time, booking BookingSnapshot) (Envelope, error) {
 	if eventType != EventBookingConfirmed && eventType != EventBookingCancelled && eventType != EventBookingRescheduled {
 		return Envelope{}, fmt.Errorf("unsupported booking event type %q", eventType)
 	}
-	return newEnvelope(id, eventType, occurredAt, BookingReference{BookingID: bookingID})
+	return newEnvelope(id, eventType, occurredAt, BookingReference{Booking: booking})
 }
 
 func NewPaymentInvoiceReadyEvent(id string, occurredAt time.Time, data PaymentInvoiceReadyData) (Envelope, error) {
@@ -95,16 +114,16 @@ func (e Envelope) Validate() error {
 		if err := json.Unmarshal(e.Data, &data); err != nil {
 			return fmt.Errorf("decode %s data: %w", e.Type, err)
 		}
-		if strings.TrimSpace(data.BookingID) == "" {
-			return errors.New("booking_id is required")
+		if err := data.Booking.validate(); err != nil {
+			return err
 		}
 	case EventPaymentInvoiceReady:
 		var data PaymentInvoiceReadyData
 		if err := json.Unmarshal(e.Data, &data); err != nil {
 			return fmt.Errorf("decode %s data: %w", e.Type, err)
 		}
-		if strings.TrimSpace(data.BookingID) == "" {
-			return errors.New("booking_id is required")
+		if err := data.Booking.validate(); err != nil {
+			return err
 		}
 		if strings.TrimSpace(data.PaymentURL) == "" {
 			return errors.New("payment_url is required")
@@ -114,6 +133,34 @@ func (e Envelope) Validate() error {
 		}
 	default:
 		return fmt.Errorf("unsupported notification event type %q", e.Type)
+	}
+	return nil
+}
+
+func (b BookingSnapshot) validate() error {
+	for name, value := range map[string]string{
+		"booking_id":   b.BookingID,
+		"booking_code": b.BookingCode,
+		"user_id":      b.UserID,
+		"field_id":     b.FieldID,
+		"field_name":   b.FieldName,
+		"booking_date": b.BookingDate,
+		"start_time":   b.StartTime,
+		"end_time":     b.EndTime,
+		"status":       b.Status,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s is required", name)
+		}
+	}
+	if _, err := time.Parse("2006-01-02", b.BookingDate); err != nil {
+		return fmt.Errorf("booking_date must use YYYY-MM-DD format: %w", err)
+	}
+	if b.Duration <= 0 {
+		return errors.New("duration must be greater than zero")
+	}
+	if b.TotalPrice < 0 {
+		return errors.New("total_price must not be negative")
 	}
 	return nil
 }

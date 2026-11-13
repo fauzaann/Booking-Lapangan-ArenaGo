@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"Booking-Lapangan/config"
+	notificationv1 "Booking-Lapangan/contracts/notification/v1"
 	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/models"
 	"Booking-Lapangan/repository"
@@ -330,6 +331,40 @@ func TestScheduleRemindersForBooking(t *testing.T) {
 	}
 	if mockNotif.notifications[0].Type != models.NotificationTypeBookingConfirmed {
 		t.Errorf("expected notification type %s, got %s", models.NotificationTypeBookingConfirmed, mockNotif.notifications[0].Type)
+	}
+}
+
+func TestHandleOutboxEventUsesSnapshotAndEventIDWithoutUnitOfWork(t *testing.T) {
+	now := time.Now().UTC()
+	event, err := notificationv1.NewBookingEvent("evt-confirmed-1", notificationv1.EventBookingConfirmed, now, notificationv1.BookingSnapshot{
+		BookingID: "100", BookingCode: "AG-TEST-100", UserID: "10",
+		UserName: "Andi", UserEmail: "andi@example.com", UserPhone: "+628123456789",
+		UserWhatsAppOptIn: true, FieldID: "1", FieldName: "Lapangan Padel Alpha",
+		BookingDate: now.AddDate(0, 0, 5).Format("2006-01-02"),
+		StartTime:   "16:00", EndTime: "18:00", Duration: 2, TotalPrice: 200000,
+		Status: string(models.BookingStatusConfirmed),
+	})
+	if err != nil {
+		t.Fatalf("create booking event: %v", err)
+	}
+
+	inbox := newMockNotifRepo()
+	whatsAppJobs := &mockWhatsAppJobRepo{}
+	controller := controllers.NewNotificationController(nil, inbox, nil, config.MongoConfig{}, controllers.NotificationOptions{
+		WhatsAppJobs: whatsAppJobs,
+		WhatsAppConfig: controllers.WhatsAppNotificationConfig{
+			BookingConfirmedTemplate: "booking_confirmed",
+		},
+	})
+
+	if err := controller.HandleOutboxEvent(context.Background(), event); err != nil {
+		t.Fatalf("HandleOutboxEvent() error = %v", err)
+	}
+	if len(inbox.notifications) != 1 || inbox.notifications[0].EventID != event.ID {
+		t.Fatalf("notification event ID = %+v, want %q", inbox.notifications, event.ID)
+	}
+	if len(whatsAppJobs.jobs) != 1 || whatsAppJobs.jobs[0].EventID != event.ID {
+		t.Fatalf("WhatsApp event ID = %+v, want %q", whatsAppJobs.jobs, event.ID)
 	}
 }
 

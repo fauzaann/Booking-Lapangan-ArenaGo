@@ -135,10 +135,11 @@ func (c *paymentController) HandleWebhook(ctx context.Context, callbackToken str
 			return err
 		}
 		if payment.Status == models.PaymentStatusPaid {
-			return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
-				EventType: models.NotificationEventBookingConfirmed,
-				BookingID: booking.ID,
-			})
+			event, eventErr := newNotificationOutboxEvent(models.NotificationEventBookingConfirmed, booking, "", nil)
+			if eventErr != nil {
+				return eventErr
+			}
+			return r.NotificationOutbox().Create(ctx, event)
 		}
 		return nil
 	})
@@ -213,10 +214,11 @@ func applyCheckoutWebhook(
 			if err := r.Booking().Update(ctx, booking); err != nil {
 				return err
 			}
-			if err := r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
-				EventType: models.NotificationEventBookingConfirmed,
-				BookingID: booking.ID,
-			}); err != nil {
+			event, eventErr := newNotificationOutboxEvent(models.NotificationEventBookingConfirmed, booking, "", nil)
+			if eventErr != nil {
+				return eventErr
+			}
+			if err := r.NotificationOutbox().Create(ctx, event); err != nil {
 				return err
 			}
 		}
@@ -465,10 +467,13 @@ func (c *paymentController) SyncPaymentStatus(ctx context.Context, actor Actor, 
 				return err
 			}
 			if shouldNotify {
-				return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
-					EventType: models.NotificationEventBookingConfirmed,
-					BookingID: currentBooking.ID,
-				})
+				event, eventErr := newNotificationOutboxEvent(
+					models.NotificationEventBookingConfirmed, currentBooking, "", nil,
+				)
+				if eventErr != nil {
+					return eventErr
+				}
+				return r.NotificationOutbox().Create(ctx, event)
 			}
 			return nil
 		})

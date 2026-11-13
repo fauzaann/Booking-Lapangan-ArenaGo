@@ -50,7 +50,14 @@ func (r *mutationBookingRepo) find(id uint) (*models.Booking, error) {
 	if !ok {
 		return nil, apperror.NotFound("booking not found")
 	}
-	return cloneMutationBooking(booking), nil
+	result := cloneMutationBooking(booking)
+	if result.User == nil {
+		result.User = &models.User{ID: result.UserID, Name: "Rizki"}
+	}
+	if result.Field == nil {
+		result.Field = &models.Field{ID: result.FieldID, Name: "Arena Utama"}
+	}
+	return result, nil
 }
 func (r *mutationBookingRepo) FindByCode(_ context.Context, code string) (*models.Booking, error) {
 	for _, booking := range r.bookings {
@@ -201,6 +208,10 @@ func cloneMutationBooking(booking *models.Booking) *models.Booking {
 	if booking.Field != nil {
 		field := *booking.Field
 		copy.Field = &field
+	}
+	if booking.User != nil {
+		user := *booking.User
+		copy.User = &user
 	}
 	if booking.Payment != nil {
 		payment := *booking.Payment

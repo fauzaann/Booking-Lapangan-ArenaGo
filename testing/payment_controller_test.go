@@ -173,10 +173,44 @@ func (r *testBookingRepo) FindByID(ctx context.Context, id uint) (*models.Bookin
 	return nil, apperror.NotFound("booking not found")
 }
 func (r *testBookingRepo) FindDetailByID(ctx context.Context, id uint) (*models.Booking, error) {
-	return r.FindByID(ctx, id)
+	return r.findDetail(ctx, id)
 }
 func (r *testBookingRepo) FindDetailByIDForUpdate(ctx context.Context, id uint) (*models.Booking, error) {
-	return r.FindByID(ctx, id)
+	return r.findDetail(ctx, id)
+}
+func (r *testBookingRepo) findDetail(ctx context.Context, id uint) (*models.Booking, error) {
+	booking, err := r.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if booking.BookingCode == "" {
+		booking.BookingCode = "AG-TEST-BOOKING"
+	}
+	if booking.UserID == 0 {
+		booking.UserID = 1
+	}
+	if booking.FieldID == 0 {
+		booking.FieldID = 1
+	}
+	if booking.BookingDate.IsZero() {
+		booking.BookingDate = time.Now()
+	}
+	if booking.StartTime == "" {
+		booking.StartTime = "10:00"
+	}
+	if booking.EndTime == "" {
+		booking.EndTime = "11:00"
+	}
+	if booking.Duration == 0 {
+		booking.Duration = 1
+	}
+	if booking.User == nil {
+		booking.User = &models.User{ID: booking.UserID, Name: "Rizki"}
+	}
+	if booking.Field == nil {
+		booking.Field = &models.Field{ID: booking.FieldID, Name: "Arena Utama"}
+	}
+	return booking, nil
 }
 func (r *testBookingRepo) FindByCode(ctx context.Context, code string) (*models.Booking, error) {
 	return r.booking, nil

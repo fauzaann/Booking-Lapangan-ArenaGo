@@ -258,12 +258,19 @@ func (c *bookingController) Create(ctx context.Context, actor Actor, req dto.Cre
 		if updateErr := r.Booking().Update(ctx, booking); updateErr != nil {
 			return updateErr
 		}
-		return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
-			EventType:  models.NotificationEventPaymentInvoiceReady,
-			BookingID:  booking.ID,
-			PaymentURL: invoice.InvoiceURL,
-			ExpiresAt:  expiredAt,
-		})
+		user, userErr := r.User().FindByID(ctx, booking.UserID)
+		if userErr != nil {
+			return userErr
+		}
+		booking.User = user
+		booking.Field = field
+		event, eventErr := newNotificationOutboxEvent(
+			models.NotificationEventPaymentInvoiceReady, booking, invoice.InvoiceURL, expiredAt,
+		)
+		if eventErr != nil {
+			return eventErr
+		}
+		return r.NotificationOutbox().Create(ctx, event)
 	})
 	if err != nil {
 		return nil, err
@@ -408,10 +415,11 @@ func (c *bookingController) CancelWithReason(ctx context.Context, actor Actor, i
 		}
 		locked.Payment = payment
 		booking = locked
-		return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
-			EventType: models.NotificationEventBookingCancelled,
-			BookingID: locked.ID,
-		})
+		event, eventErr := newNotificationOutboxEvent(models.NotificationEventBookingCancelled, locked, "", nil)
+		if eventErr != nil {
+			return eventErr
+		}
+		return r.NotificationOutbox().Create(ctx, event)
 	})
 	if err != nil {
 		return nil, err
@@ -550,10 +558,11 @@ func (c *bookingController) Reschedule(ctx context.Context, actor Actor, id uint
 			return err
 		}
 		booking = locked
-		return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
-			EventType: models.NotificationEventBookingRescheduled,
-			BookingID: locked.ID,
-		})
+		event, eventErr := newNotificationOutboxEvent(models.NotificationEventBookingRescheduled, locked, "", nil)
+		if eventErr != nil {
+			return eventErr
+		}
+		return r.NotificationOutbox().Create(ctx, event)
 	})
 	if err != nil {
 		return nil, err
@@ -636,10 +645,11 @@ func (c *bookingController) UpdateStatus(ctx context.Context, id uint, status mo
 		if eventType == "" {
 			return nil
 		}
-		return r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
-			EventType: eventType,
-			BookingID: booking.ID,
-		})
+		event, err := newNotificationOutboxEvent(eventType, booking, "", nil)
+		if err != nil {
+			return err
+		}
+		return r.NotificationOutbox().Create(ctx, event)
 	})
 	if err != nil {
 		return nil, err

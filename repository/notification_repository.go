@@ -53,7 +53,12 @@ func (r *notificationRepository) EnsureIndexes(ctx context.Context) error {
 		Options: options.Index().SetExpireAfterSeconds(0).SetName("idx_notifications_ttl"),
 	}
 
-	_, err := r.coll.Indexes().CreateMany(ctx, []mongo.IndexModel{queryModel, ttlModel})
+	eventModel := mongo.IndexModel{
+		Keys:    bson.D{{Key: "event_id", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("idx_notification_event_id_unique").SetPartialFilterExpression(bson.M{"event_id": bson.M{"$type": "string"}}),
+	}
+
+	_, err := r.coll.Indexes().CreateMany(ctx, []mongo.IndexModel{queryModel, ttlModel, eventModel})
 	return err
 }
 
@@ -70,6 +75,9 @@ func (r *notificationRepository) Create(ctx context.Context, notif *models.Notif
 
 	res, err := r.coll.InsertOne(ctx, notif)
 	if err != nil {
+		if notif.EventID != "" && mongo.IsDuplicateKeyError(err) {
+			return nil
+		}
 		return err
 	}
 	if oid, ok := res.InsertedID.(bson.ObjectID); ok {

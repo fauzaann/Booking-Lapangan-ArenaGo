@@ -25,13 +25,34 @@ Jalankan backend dari root repository:
 go run main.go
 ```
 
-Jalankan worker notifikasi pada terminal/proses terpisah:
+Jalankan RabbitMQ lokal (contoh dengan Docker):
+
+```bash
+docker run --rm -p 5672:5672 rabbitmq:3-management
+```
+
+Lalu jalankan publisher transactional outbox dan worker notifikasi pada
+terminal/proses terpisah:
+
+```bash
+go run ./cmd/outbox-publisher
+```
 
 ```bash
 go run ./cmd/notification-worker
 ```
 
-Worker memproses transactional outbox notifikasi PostgreSQL, pengingat dan antrean WhatsApp MongoDB. API tetap menangani endpoint inbox; jalankan worker agar event booking/pembayaran diteruskan ke sistem notifikasi.
+API menyimpan event notifikasi pada transactional outbox PostgreSQL bersamaan
+dengan perubahan bisnis. `outbox-publisher` meneruskan event berversi ke RabbitMQ
+dan menandai event selesai setelah publisher confirm. `notification-worker`
+mengonsumsi antrean RabbitMQ dan mengelola inbox, pengingat, serta antrean
+WhatsApp MongoDB. Worker tidak membaca tabel booking atau payment; pengecekan
+persetujuan WhatsApp terkini masih membaca data user. API tetap menangani endpoint
+inbox.
+
+Atur URL dan opsi broker melalui variabel `RABBITMQ_*` di `.env`. Kedua proses
+memerlukan RabbitMQ yang tersedia; consumer menggunakan retry queue bertenggang
+waktu dan dead-letter queue untuk event yang gagal diproses.
 
 Di terminal lain, jalankan frontend dari folder frontend:
 
@@ -143,6 +164,7 @@ UI otomatis memakai gradient fallback.
 | HTTP Framework | Gin |
 | Database Utama + transactional outbox | PostgreSQL 16 (GORM) |
 | Inbox, pengingat & antrean delivery | MongoDB (mongo-driver/v2) |
+| Event broker notifikasi | RabbitMQ (AMQP 0-9-1) |
 | Cache Lapangan | Redis (go-redis/v9, opsional) |
 | Auth | JWT (golang-jwt/v5) + bcrypt |
 | Validasi | go-playground/validator/v10 |
@@ -175,6 +197,13 @@ Untuk pembayaran:
 Handler → Controller → Xendit Service (pkg/xendit) → Xendit API
 ```
 
+Pengiriman event notifikasi:
+
+```
+Transaksi booking/payment → PostgreSQL outbox → outbox-publisher → RabbitMQ
+                                                               → notification-worker → MongoDB
+```
+
 Prinsip yang dijaga:
 
 - Handler **tidak pernah** melakukan query database atau memanggil Xendit langsung.
@@ -188,6 +217,7 @@ Prinsip yang dijaga:
 booking-field/
 ├── main.go                     # entrypoint + dependency injection + graceful shutdown
 ├── cmd/notification-worker/    # proses terpisah untuk pengingat & pengiriman WhatsApp
+├── cmd/outbox-publisher/       # publisher transactional outbox ke RabbitMQ
 ├── config/                     # env, koneksi database, client Xendit
 ├── database/                   # migration & seeder
 ├── internal/booking/           # kontrak/read model booking tanpa GORM
@@ -198,7 +228,7 @@ booking-field/
 ├── handler/                    # lapisan HTTP
 ├── middleware/                 # auth, role, logger, CORS, recovery
 ├── router/                     # pemetaan endpoint
-├── worker/                     # background job (booking expirer & notifikasi)
+├── worker/                     # outbox publisher, consumer handler & background job
 ├── pkg/
 │   ├── apperror/               # error domain + HTTP status
 │   ├── jwt/                    # generate & verify token

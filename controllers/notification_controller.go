@@ -97,50 +97,82 @@ func (c *notificationController) HandleOutboxEvent(ctx context.Context, event no
 		if err != nil {
 			return err
 		}
-		bookingID, err := parseNotificationBookingID(data.BookingID)
+		booking, err := bookingFromSnapshot(data.Booking)
 		if err != nil {
 			return err
 		}
-		return c.ScheduleRemindersForBooking(ctx, bookingID)
+		return c.scheduleRemindersForBooking(ctx, booking, event.ID)
 	case notificationv1.EventBookingCancelled:
 		data, err := event.BookingReference()
 		if err != nil {
 			return err
 		}
-		bookingID, err := parseNotificationBookingID(data.BookingID)
+		booking, err := bookingFromSnapshot(data.Booking)
 		if err != nil {
 			return err
 		}
-		return c.CancelRemindersForBooking(ctx, bookingID)
+		return c.cancelRemindersForBooking(ctx, booking, event.ID)
 	case notificationv1.EventBookingRescheduled:
 		data, err := event.BookingReference()
 		if err != nil {
 			return err
 		}
-		bookingID, err := parseNotificationBookingID(data.BookingID)
+		booking, err := bookingFromSnapshot(data.Booking)
 		if err != nil {
 			return err
 		}
-		return c.RescheduleBooking(ctx, bookingID)
+		return c.rescheduleBooking(ctx, booking, event.ID)
 	case notificationv1.EventPaymentInvoiceReady:
 		data, err := event.PaymentInvoiceReady()
 		if err != nil {
 			return err
 		}
-		bookingID, err := parseNotificationBookingID(data.BookingID)
+		booking, err := bookingFromSnapshot(data.Booking)
 		if err != nil {
 			return err
 		}
-		return c.SchedulePaymentReminder(ctx, bookingID, data.PaymentURL, data.ExpiresAt)
+		return c.schedulePaymentReminder(ctx, booking, data.PaymentURL, data.ExpiresAt)
 	default:
 		return fmt.Errorf("unsupported notification event type %q", event.Type)
 	}
 }
 
-func parseNotificationBookingID(value string) (uint, error) {
+func bookingFromSnapshot(snapshot notificationv1.BookingSnapshot) (*models.Booking, error) {
+	bookingID, err := parseNotificationID(snapshot.BookingID, "booking_id")
+	if err != nil {
+		return nil, err
+	}
+	userID, err := parseNotificationID(snapshot.UserID, "user_id")
+	if err != nil {
+		return nil, err
+	}
+	fieldID, err := parseNotificationID(snapshot.FieldID, "field_id")
+	if err != nil {
+		return nil, err
+	}
+	bookingDate, err := time.Parse(timeutil.DateLayout, snapshot.BookingDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid notification event booking_date: %w", err)
+	}
+	return &models.Booking{
+		ID: bookingID, BookingCode: snapshot.BookingCode,
+		UserID: userID, FieldID: fieldID, BookingDate: bookingDate,
+		StartTime: snapshot.StartTime, EndTime: snapshot.EndTime,
+		Duration: snapshot.Duration, TotalPrice: snapshot.TotalPrice,
+		Status:               models.BookingStatus(snapshot.Status),
+		RefundReviewRequired: snapshot.RefundReviewRequired,
+		User: &models.User{
+			ID: userID, Name: snapshot.UserName, Email: snapshot.UserEmail,
+			Phone: snapshot.UserPhone, WhatsAppOptIn: snapshot.UserWhatsAppOptIn,
+		},
+		Field: &models.Field{ID: fieldID, Name: snapshot.FieldName},
+	}, nil
+}
+
+func parseNotificationID(value, field string) (uint, error) {
 	id, err := strconv.ParseUint(value, 10, strconv.IntSize)
 	if err != nil || id == 0 {
-		return 0, fmt.Errorf("invalid notification event booking_id %q", value)
+		return 0, fmt.Errorf("invalid notification event %s %q", field, value)
 	}
 	return uint(id), nil
 }
@@ -151,7 +183,11 @@ func (c *notificationController) ScheduleRemindersForBooking(ctx context.Context
 	if err != nil {
 		return fmt.Errorf("failed to fetch booking details for reminder: %w", err)
 	}
+	return c.scheduleRemindersForBooking(ctx, booking, "")
+}
 
+func (c *notificationController) scheduleRemindersForBooking(ctx context.Context, booking *models.Booking, eventID string) error {
+	bookingID := booking.ID
 	now := timeNow()
 	var result error
 	if c.reminderRepo != nil {
@@ -180,12 +216,13 @@ func (c *notificationController) ScheduleRemindersForBooking(ctx context.Context
 	channels := []string{models.NotificationChannelInApp}
 	whatsAppQueued, whatsAppErr := c.enqueueWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingConfirmedTemplate, []string{
 		userName, booking.BookingCode, field, dateStr, booking.StartTime, booking.EndTime,
-	})
+	}, eventID)
 	if whatsAppQueued {
 		channels = append(channels, models.NotificationChannelWA)
 	}
 	if c.notifRepo != nil {
 		createErr := c.notifRepo.Create(ctx, &models.Notification{
+			EventID:     eventID,
 			UserID:      booking.UserID,
 			BookingID:   booking.ID,
 			BookingCode: booking.BookingCode,
@@ -221,8 +258,15 @@ func (c *notificationController) SchedulePaymentReminder(ctx context.Context, bo
 	if err != nil {
 		return fmt.Errorf("failed to fetch booking details for payment reminder: %w", err)
 	}
+	return c.schedulePaymentReminder(ctx, booking, paymentURL, expiresAt)
+}
+
+func (c *notificationController) schedulePaymentReminder(ctx context.Context, booking *models.Booking, paymentURL string, expiresAt time.Time) error {
+	if c.reminderRepo == nil {
+		return nil
+	}
 	if booking.User == nil {
-		return fmt.Errorf("booking %d does not include user details for payment reminder", bookingID)
+		return fmt.Errorf("booking %d does not include user details for payment reminder", booking.ID)
 	}
 	delay := c.whatsAppCfg.PaymentReminderDelay
 	if delay <= 0 {
@@ -255,20 +299,23 @@ func (c *notificationController) SchedulePaymentReminder(ctx context.Context, bo
 
 // CancelRemindersForBooking membatalkan antrean reminder di MongoDB saat booking CANCELLED.
 func (c *notificationController) CancelRemindersForBooking(ctx context.Context, bookingID uint) error {
-	var result error
-	if c.reminderRepo != nil {
-		if err := c.reminderRepo.CancelByBookingID(ctx, bookingID); err != nil {
-			log.Printf("notification: failed to cancel reminder jobs for booking %d: %v", bookingID, err)
-			result = errors.Join(result, err)
-		}
-	}
-
 	booking, err := c.uow.Booking().FindDetailByID(ctx, bookingID)
 	if err != nil {
-		return errors.Join(result, fmt.Errorf("failed to load cancelled booking %d for notification: %w", bookingID, err))
+		return fmt.Errorf("failed to load cancelled booking %d for notification: %w", bookingID, err)
 	}
+	return c.cancelRemindersForBooking(ctx, booking, "")
+}
+
+func (c *notificationController) cancelRemindersForBooking(ctx context.Context, booking *models.Booking, eventID string) error {
 	if booking == nil {
-		return errors.Join(result, fmt.Errorf("cancelled booking %d was not found for notification", bookingID))
+		return fmt.Errorf("cancelled booking was not found for notification")
+	}
+	var result error
+	if c.reminderRepo != nil {
+		if err := c.reminderRepo.CancelByBookingID(ctx, booking.ID); err != nil {
+			log.Printf("notification: failed to cancel reminder jobs for booking %d: %v", booking.ID, err)
+			result = errors.Join(result, err)
+		}
 	}
 	message := fmt.Sprintf("Jadwal booking Anda dengan kode %s telah dibatalkan.", booking.BookingCode)
 	if booking.RefundReviewRequired {
@@ -279,7 +326,7 @@ func (c *notificationController) CancelRemindersForBooking(ctx context.Context, 
 	if booking.User != nil {
 		whatsAppQueued, sendErr := c.enqueueWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingCancelledTemplate, []string{
 			booking.User.Name, booking.BookingCode, fieldName(booking),
-		})
+		}, eventID)
 		whatsAppErr = sendErr
 		if whatsAppQueued {
 			channels = append(channels, models.NotificationChannelWA)
@@ -288,6 +335,7 @@ func (c *notificationController) CancelRemindersForBooking(ctx context.Context, 
 	if c.notifRepo != nil {
 		now := timeNow()
 		if createErr := c.notifRepo.Create(ctx, &models.Notification{
+			EventID:     eventID,
 			UserID:      booking.UserID,
 			BookingID:   booking.ID,
 			BookingCode: booking.BookingCode,
@@ -311,9 +359,15 @@ func (c *notificationController) RescheduleBooking(ctx context.Context, bookingI
 	if err != nil {
 		return fmt.Errorf("failed to load rescheduled booking %d: %w", bookingID, err)
 	}
+	return c.rescheduleBooking(ctx, booking, "")
+}
+
+func (c *notificationController) rescheduleBooking(ctx context.Context, booking *models.Booking, eventID string) error {
+	bookingID := booking.ID
 	if c.reminderRepo != nil {
 		var jobs []models.ReminderJob
 		if booking.Status == models.BookingStatusPaid || booking.Status == models.BookingStatusConfirmed {
+			var err error
 			jobs, err = c.buildReminderJobs(booking, timeNow())
 			if err != nil {
 				return err
@@ -330,7 +384,7 @@ func (c *notificationController) RescheduleBooking(ctx context.Context, bookingI
 	if booking.User != nil {
 		whatsAppQueued, sendErr := c.enqueueWhatsApp(ctx, booking.User, c.whatsAppCfg.BookingRescheduledTemplate, []string{
 			booking.User.Name, booking.BookingCode, fieldName(booking), dateStr, booking.StartTime, booking.EndTime,
-		})
+		}, eventID)
 		whatsAppErr = sendErr
 		if whatsAppQueued {
 			channels = append(channels, models.NotificationChannelWA)
@@ -339,6 +393,7 @@ func (c *notificationController) RescheduleBooking(ctx context.Context, bookingI
 	var createErr error
 	if c.notifRepo != nil {
 		createErr = c.notifRepo.Create(ctx, &models.Notification{
+			EventID:     eventID,
 			UserID:      booking.UserID,
 			BookingID:   booking.ID,
 			BookingCode: booking.BookingCode,
@@ -383,7 +438,7 @@ func (c *notificationController) PublishVenueAnnouncement(ctx context.Context, t
 			now := timeNow()
 			channels := []string{models.NotificationChannelInApp}
 			if user.WhatsAppOptIn {
-				queued, queueErr := c.enqueueWhatsApp(ctx, user, c.whatsAppCfg.VenueAnnouncementTemplate, []string{title, message})
+				queued, queueErr := c.enqueueWhatsApp(ctx, user, c.whatsAppCfg.VenueAnnouncementTemplate, []string{title, message}, "")
 				if queueErr != nil {
 					result.WhatsAppFailed++
 					log.Printf("notification: failed to queue venue announcement for user %d: %v", user.ID, queueErr)
@@ -413,7 +468,7 @@ func (c *notificationController) PublishVenueAnnouncement(ctx context.Context, t
 	return result, nil
 }
 
-func (c *notificationController) enqueueWhatsApp(ctx context.Context, user *models.User, template string, parameters []string) (bool, error) {
+func (c *notificationController) enqueueWhatsApp(ctx context.Context, user *models.User, template string, parameters []string, eventID string) (bool, error) {
 	if user == nil || !user.WhatsAppOptIn {
 		return false, nil
 	}
@@ -421,6 +476,7 @@ func (c *notificationController) enqueueWhatsApp(ctx context.Context, user *mode
 		return false, fmt.Errorf("WhatsApp delivery outbox is not available")
 	}
 	job := &models.WhatsAppJob{
+		EventID:      eventID,
 		UserID:       user.ID,
 		Template:     template,
 		Parameters:   append([]string(nil), parameters...),

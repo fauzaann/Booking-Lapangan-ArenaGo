@@ -10,6 +10,7 @@ import (
 
 	"Booking-Lapangan/config"
 	"Booking-Lapangan/controllers"
+	"Booking-Lapangan/pkg/rabbitmq"
 	"Booking-Lapangan/pkg/whatsapp"
 	"Booking-Lapangan/repository"
 	"Booking-Lapangan/worker"
@@ -25,6 +26,15 @@ func main() {
 	if (cfg.WhatsApp.PhoneNumberID == "") != (cfg.WhatsApp.AccessToken == "") {
 		log.Fatal("config: WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN must be configured together")
 	}
+	rabbitClient, err := rabbitmq.New(cfg.RabbitMQ)
+	if err != nil {
+		log.Fatalf("rabbitmq: %v", err)
+	}
+	defer func() {
+		if err := rabbitClient.Close(); err != nil {
+			log.Printf("rabbitmq: failed to close connection: %v", err)
+		}
+	}()
 	if location, err := time.LoadLocation(cfg.Database.TimeZone); err == nil {
 		time.Local = location
 	} else {
@@ -75,9 +85,9 @@ func main() {
 		log.Println("whatsapp: Cloud API credentials are not configured; WhatsApp jobs remain queued")
 	}
 
-	uow := repository.NewUnitOfWork(db)
+	userRepository := repository.NewUserRepository(db)
 	notifController := controllers.NewNotificationController(
-		uow, notifications, reminders, cfg.Mongo,
+		nil, notifications, reminders, cfg.Mongo,
 		controllers.NotificationOptions{
 			WhatsAppConfig: controllers.WhatsAppNotificationConfig{
 				PaymentReminderDelay:       cfg.WhatsApp.PaymentReminderDelay,
@@ -93,23 +103,32 @@ func main() {
 		reminders, notifications, cfg.Mongo.WorkerInterval,
 		worker.ReminderWorkerOptions{
 			WhatsAppConfig: cfg.WhatsApp, WhatsAppSender: sender,
-			UserRepository: uow.User(), PaymentRepository: uow.Payment(),
+			UserRepository: userRepository,
 		},
 	)
 	whatsAppWorker := worker.NewWhatsAppDeliveryWorker(
-		whatsAppJobs, uow.User(), sender, cfg.WhatsApp, cfg.Mongo.WorkerInterval,
-	)
-	outboxWorker := worker.NewNotificationOutboxWorker(
-		uow.NotificationOutbox(), notifController, cfg.Mongo.WorkerInterval,
+		whatsAppJobs, userRepository, sender, cfg.WhatsApp, cfg.Mongo.WorkerInterval,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go reminderWorker.Start(ctx)
 	go whatsAppWorker.Start(ctx)
-	go outboxWorker.Start(ctx)
+	consumerErr := make(chan error, 1)
+	go func() {
+		consumerErr <- rabbitClient.Consume(ctx, notifController.HandleOutboxEvent)
+	}()
 
-	log.Println("notification-worker: running")
-	<-ctx.Done()
+	log.Println("notification-worker: consuming RabbitMQ events")
+	select {
+	case <-ctx.Done():
+	case err := <-consumerErr:
+		if err != nil {
+			log.Fatalf("notification-worker: RabbitMQ consumer stopped: %v", err)
+		}
+		if ctx.Err() == nil {
+			log.Fatal("notification-worker: RabbitMQ consumer stopped unexpectedly")
+		}
+	}
 	log.Println("notification-worker: shutting down")
 }

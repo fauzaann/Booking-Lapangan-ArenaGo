@@ -2,11 +2,13 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -29,6 +31,15 @@ func NewNotificationOutboxRepository(db *gorm.DB) NotificationOutboxRepository {
 }
 
 func (r *notificationOutboxRepository) Create(ctx context.Context, event *models.NotificationEvent) error {
+	if event.EventID == "" {
+		event.EventID = uuid.NewString()
+	}
+	if event.ContractVersion <= 0 {
+		return errors.New("notification event contract version is required")
+	}
+	if len(event.Payload) == 0 || !json.Valid([]byte(event.Payload)) {
+		return errors.New("notification event payload must be valid JSON")
+	}
 	if event.Status == "" {
 		event.Status = models.NotificationEventPending
 	}
@@ -90,6 +101,9 @@ func (r *notificationOutboxRepository) MarkProcessed(ctx context.Context, id uin
 		"processed_at": now,
 		"locked_at":    nil,
 		"last_error":   "",
+		"payload":      "{}",
+		"payment_url":  "",
+		"expires_at":   nil,
 	})
 	if result.Error != nil {
 		return translate(result.Error, "failed to mark notification event processed")

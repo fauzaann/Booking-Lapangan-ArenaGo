@@ -14,10 +14,9 @@ import (
 )
 
 type ReminderWorkerOptions struct {
-	WhatsAppConfig    config.WhatsAppConfig
-	WhatsAppSender    whatsapp.Sender
-	UserRepository    repository.UserRepository
-	PaymentRepository repository.PaymentRepository
+	WhatsAppConfig config.WhatsAppConfig
+	WhatsAppSender whatsapp.Sender
+	UserRepository repository.UserRepository
 }
 
 // ReminderWorker bertugas memantau antrean pengingat di MongoDB dan
@@ -29,7 +28,6 @@ type ReminderWorker struct {
 	whatsAppCfg  config.WhatsAppConfig
 	whatsApp     whatsapp.Sender
 	userRepo     repository.UserRepository
-	paymentRepo  repository.PaymentRepository
 }
 
 // NewReminderWorker membuat worker pengingat jadwal baru.
@@ -51,7 +49,6 @@ func NewReminderWorker(
 		worker.whatsAppCfg = options[0].WhatsAppConfig
 		worker.whatsApp = options[0].WhatsAppSender
 		worker.userRepo = options[0].UserRepository
-		worker.paymentRepo = options[0].PaymentRepository
 	}
 	return worker
 }
@@ -109,21 +106,6 @@ func (w *ReminderWorker) runOnce(ctx context.Context) {
 			}
 			continue
 		}
-		if job.ReminderType == models.ReminderTypePaymentDue && w.paymentRepo != nil {
-			payment, err := w.paymentRepo.FindByBookingID(ctx, job.BookingID)
-			if err != nil {
-				log.Printf("worker: failed to verify payment reminder for booking %s: %v", job.BookingCode, err)
-				w.retry(ctx, job, err)
-				continue
-			}
-			if payment.Status != models.PaymentStatusPending {
-				if err := w.reminderRepo.UpdateStatus(ctx, job.ID, models.ReminderStatusCancelled, nil, "payment is no longer pending"); err != nil {
-					log.Printf("worker: failed to cancel paid/expired reminder %s: %v", job.ID.Hex(), err)
-				}
-				continue
-			}
-		}
-
 		var title, message string
 		dateStr := job.BookingDate.Format("02 Jan 2006")
 

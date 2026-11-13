@@ -290,7 +290,7 @@ func (c *checkoutController) Create(ctx context.Context, actor Actor, req dto.Ch
 			if err := r.Payment().Update(ctx, &payments[i]); err != nil {
 				return err
 			}
-			booking, err := r.Booking().FindByID(ctx, payments[i].BookingID)
+			booking, err := r.Booking().FindDetailByIDForUpdate(ctx, payments[i].BookingID)
 			if err != nil {
 				return err
 			}
@@ -298,12 +298,13 @@ func (c *checkoutController) Create(ctx context.Context, actor Actor, req dto.Ch
 			if err := r.Booking().Update(ctx, booking); err != nil {
 				return err
 			}
-			if err := r.NotificationOutbox().Create(ctx, &models.NotificationEvent{
-				EventType:  models.NotificationEventPaymentInvoiceReady,
-				BookingID:  booking.ID,
-				PaymentURL: invoice.InvoiceURL,
-				ExpiresAt:  expiredAt,
-			}); err != nil {
+			event, eventErr := newNotificationOutboxEvent(
+				models.NotificationEventPaymentInvoiceReady, booking, invoice.InvoiceURL, expiredAt,
+			)
+			if eventErr != nil {
+				return eventErr
+			}
+			if err := r.NotificationOutbox().Create(ctx, event); err != nil {
 				return err
 			}
 			for j := range items {

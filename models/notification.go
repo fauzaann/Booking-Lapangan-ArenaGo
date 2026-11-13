@@ -18,22 +18,25 @@ const (
 	NotificationEventFailed     = "FAILED"
 )
 
-// NotificationEvent is a PostgreSQL transactional outbox event consumed by
-// the notification worker.
+// NotificationEvent is a PostgreSQL transactional outbox event awaiting broker
+// publication.
 type NotificationEvent struct {
-	ID          uint       `gorm:"primaryKey" json:"id"`
-	EventType   string     `gorm:"type:varchar(50);not null;index" json:"event_type"`
-	BookingID   uint       `gorm:"not null;index" json:"booking_id"`
-	PaymentURL  string     `gorm:"type:varchar(500)" json:"-"`
-	ExpiresAt   *time.Time `json:"-"`
-	Status      string     `gorm:"type:varchar(20);not null;default:'PENDING';index" json:"status"`
-	Attempts    int        `gorm:"not null;default:0" json:"-"`
-	MaxAttempts int        `gorm:"not null;default:5" json:"-"`
-	AvailableAt time.Time  `gorm:"not null;index" json:"-"`
-	LockedAt    *time.Time `gorm:"index" json:"-"`
-	LastError   string     `gorm:"type:text" json:"-"`
-	CreatedAt   time.Time  `json:"created_at"`
-	ProcessedAt *time.Time `json:"-"`
+	ID              uint       `gorm:"primaryKey" json:"id"`
+	EventID         string     `gorm:"type:varchar(64)" json:"event_id"`
+	EventType       string     `gorm:"type:varchar(50);not null;index" json:"event_type"`
+	ContractVersion int        `gorm:"not null;default:1" json:"contract_version"`
+	BookingID       uint       `gorm:"not null;index" json:"booking_id"`
+	PaymentURL      string     `gorm:"type:varchar(500)" json:"-"`
+	ExpiresAt       *time.Time `json:"-"`
+	Payload         string     `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
+	Status          string     `gorm:"type:varchar(20);not null;default:'PENDING';index" json:"status"`
+	Attempts        int        `gorm:"not null;default:0" json:"-"`
+	MaxAttempts     int        `gorm:"not null;default:5" json:"-"`
+	AvailableAt     time.Time  `gorm:"not null;index" json:"-"`
+	LockedAt        *time.Time `gorm:"index" json:"-"`
+	LastError       string     `gorm:"type:text" json:"-"`
+	CreatedAt       time.Time  `json:"created_at"`
+	ProcessedAt     *time.Time `json:"-"`
 }
 
 // Status antrean pengingat di MongoDB.
@@ -111,6 +114,7 @@ type ReminderJob struct {
 // WhatsAppJob is an outbox entry for asynchronous WhatsApp delivery.
 type WhatsAppJob struct {
 	ID           bson.ObjectID `bson:"_id,omitempty" json:"id"`
+	EventID      string        `bson:"event_id,omitempty" json:"-"`
 	UserID       uint          `bson:"user_id" json:"user_id"`
 	Template     string        `bson:"template" json:"template"`
 	Parameters   []string      `bson:"parameters" json:"-"`
@@ -127,6 +131,7 @@ type WhatsAppJob struct {
 // Notification merepresentasikan item notifikasi in-app pada kotak masuk pengguna.
 type Notification struct {
 	ID          bson.ObjectID  `bson:"_id,omitempty" json:"id"`
+	EventID     string         `bson:"event_id,omitempty" json:"-"`
 	UserID      uint           `bson:"user_id" json:"user_id"`
 	BookingID   uint           `bson:"booking_id" json:"booking_id"`
 	BookingCode string         `bson:"booking_code" json:"booking_code"`

@@ -9,7 +9,7 @@ import (
 
 func TestBookingEventUsesVersionedTransportPayload(t *testing.T) {
 	occurredAt := time.Date(2026, 11, 12, 12, 30, 0, 0, time.FixedZone("WIB", 7*60*60))
-	event, err := NewBookingEvent("evt-123", EventBookingConfirmed, occurredAt, "42")
+	event, err := NewBookingEvent("evt-123", EventBookingConfirmed, occurredAt, testSnapshot())
 	if err != nil {
 		t.Fatalf("create booking event: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestBookingEventUsesVersionedTransportPayload(t *testing.T) {
 		`"id":"evt-123"`,
 		`"type":"booking.confirmed"`,
 		`"version":1`,
-		`"booking_id":"42"`,
+		`"booking":{"booking_id":"42"`,
 	} {
 		if !strings.Contains(jsonText, field) {
 			t.Errorf("event JSON missing %s: %s", field, jsonText)
@@ -34,8 +34,8 @@ func TestBookingEventUsesVersionedTransportPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode booking reference: %v", err)
 	}
-	if decoded.BookingID != "42" {
-		t.Fatalf("booking_id = %q, want %q", decoded.BookingID, "42")
+	if decoded.Booking.BookingID != "42" {
+		t.Fatalf("booking_id = %q, want %q", decoded.Booking.BookingID, "42")
 	}
 	if !event.OccurredAt.Equal(occurredAt.UTC()) {
 		t.Fatalf("occurred_at = %s, want %s", event.OccurredAt, occurredAt.UTC())
@@ -47,7 +47,7 @@ func TestPaymentInvoiceReadyEventRequiresCompleteData(t *testing.T) {
 	event, err := NewPaymentInvoiceReadyEvent(
 		"evt-payment",
 		time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC),
-		PaymentInvoiceReadyData{BookingID: "8", PaymentURL: "https://pay.example/invoice", ExpiresAt: expiresAt},
+		PaymentInvoiceReadyData{Booking: testSnapshot(), PaymentURL: "https://pay.example/invoice", ExpiresAt: expiresAt},
 	)
 	if err != nil {
 		t.Fatalf("create payment invoice event: %v", err)
@@ -56,13 +56,13 @@ func TestPaymentInvoiceReadyEventRequiresCompleteData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode payment invoice event: %v", err)
 	}
-	if data.BookingID != "8" || data.PaymentURL != "https://pay.example/invoice" || !data.ExpiresAt.Equal(expiresAt) {
+	if data.Booking.BookingID != "42" || data.PaymentURL != "https://pay.example/invoice" || !data.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("payment invoice payload = %+v", data)
 	}
 }
 
 func TestValidateRejectsUnsupportedVersionAndMissingPayload(t *testing.T) {
-	event, err := NewBookingEvent("evt-123", EventBookingCancelled, time.Now(), "42")
+	event, err := NewBookingEvent("evt-123", EventBookingCancelled, time.Now(), testSnapshot())
 	if err != nil {
 		t.Fatalf("create booking event: %v", err)
 	}
@@ -73,8 +73,18 @@ func TestValidateRejectsUnsupportedVersionAndMissingPayload(t *testing.T) {
 	}
 
 	event.Version = ContractVersion
-	event.Data = json.RawMessage(`{"booking_id":""}`)
+	event.Data = json.RawMessage(`{"booking":{"booking_id":""}}`)
 	if err := event.Validate(); err == nil {
 		t.Fatal("expected missing booking_id to fail")
+	}
+}
+
+func testSnapshot() BookingSnapshot {
+	return BookingSnapshot{
+		BookingID: "42", BookingCode: "BK-20261112-0001", UserID: "7",
+		UserName: "Rizki", UserEmail: "rizki@example.com", UserPhone: "+628123456789",
+		UserWhatsAppOptIn: true, FieldID: "3", FieldName: "Court A",
+		BookingDate: "2026-11-15", StartTime: "10:00", EndTime: "11:00",
+		Duration: 1, TotalPrice: 200000, Status: "CONFIRMED",
 	}
 }

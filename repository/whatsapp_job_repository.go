@@ -40,6 +40,10 @@ func (r *whatsAppJobRepository) EnsureIndexes(ctx context.Context) error {
 			Keys:    bson.D{{Key: "status", Value: 1}, {Key: "updated_at", Value: 1}},
 			Options: options.Index().SetName("idx_whatsapp_outbox_lease"),
 		},
+		{
+			Keys:    bson.D{{Key: "event_id", Value: 1}},
+			Options: options.Index().SetUnique(true).SetName("idx_whatsapp_event_id_unique").SetPartialFilterExpression(bson.M{"event_id": bson.M{"$type": "string"}}),
+		},
 	})
 	return err
 }
@@ -61,6 +65,9 @@ func (r *whatsAppJobRepository) Create(ctx context.Context, job *models.WhatsApp
 	}
 	result, err := r.coll.InsertOne(ctx, job)
 	if err != nil {
+		if job.EventID != "" && mongo.IsDuplicateKeyError(err) {
+			return nil
+		}
 		return err
 	}
 	if id, ok := result.InsertedID.(bson.ObjectID); ok {
