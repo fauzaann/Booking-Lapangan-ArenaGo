@@ -57,6 +57,7 @@ func seedUsers(db *gorm.DB) error {
 			Email:    item.Email,
 			Password: hashed,
 			Phone:    item.Phone,
+			IsActive: true,
 			Role:     item.Role,
 		}
 		if err := db.Create(&user).Error; err != nil {

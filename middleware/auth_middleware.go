@@ -3,6 +3,7 @@
 package middleware
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -17,8 +18,12 @@ import (
 // ContextActorKey adalah kunci penyimpanan identitas pemanggil di gin.Context.
 const ContextActorKey = "auth_actor"
 
+type AccountStatusChecker interface {
+	IsActive(ctx context.Context, userID uint) (bool, error)
+}
+
 // Authenticate memverifikasi header Authorization: Bearer <token>.
-func Authenticate(manager jwt.Manager) gin.HandlerFunc {
+func Authenticate(manager jwt.Manager, statusCheckers ...AccountStatusChecker) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := strings.TrimSpace(c.GetHeader("Authorization"))
 		if header == "" {
@@ -42,6 +47,17 @@ func Authenticate(manager jwt.Manager) gin.HandlerFunc {
 		if !role.Valid() {
 			response.AbortWithError(c, apperror.Unauthorized("token contains an unknown role"))
 			return
+		}
+		if len(statusCheckers) > 0 && statusCheckers[0] != nil {
+			active, err := statusCheckers[0].IsActive(c.Request.Context(), claims.UserID)
+			if err != nil {
+				response.AbortWithError(c, apperror.Internal("failed to validate account status", err))
+				return
+			}
+			if !active {
+				response.AbortWithError(c, apperror.Unauthorized("invalid or expired token"))
+				return
+			}
 		}
 
 		c.Set(ContextActorKey, controllers.Actor{

@@ -23,6 +23,7 @@ type User struct {
 	Password      string    `gorm:"type:varchar(255);not null" json:"-"`
 	Phone         string    `gorm:"type:varchar(20)" json:"phone"`
 	WhatsAppOptIn bool      `gorm:"not null;default:false" json:"whatsapp_opt_in"`
+	IsActive      bool      `gorm:"not null;default:true" json:"is_active"`
 	Role          Role      `gorm:"type:varchar(20);not null;default:'USER';index" json:"role"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`

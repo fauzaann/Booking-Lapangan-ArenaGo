@@ -62,6 +62,7 @@ func (c *authController) Register(ctx context.Context, req dto.RegisterRequest) 
 		Password:      hashed,
 		Phone:         phone,
 		WhatsAppOptIn: req.WhatsAppOptIn,
+		IsActive:      true,
 		Role:          models.RoleUser,
 	}
 
@@ -113,6 +114,9 @@ func (c *authController) Login(ctx context.Context, req dto.LoginRequest) (*dto.
 	}
 
 	if !password.Verify(user.Password, req.Password) {
+		return nil, apperror.Unauthorized("invalid email or password")
+	}
+	if !user.IsActive {
 		return nil, apperror.Unauthorized("invalid email or password")
 	}
 

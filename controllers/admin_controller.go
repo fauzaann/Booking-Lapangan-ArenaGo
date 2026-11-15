@@ -15,7 +15,8 @@ import (
 type AdminController interface {
 	Dashboard(ctx context.Context) (*dto.DashboardResponse, error)
 	RevenueAnalytics(ctx context.Context, year int) (*dto.RevenueAnalyticsResponse, error)
-	ListUsers(ctx context.Context, query dto.PaginationQuery) ([]dto.UserResponse, int64, error)
+	ListUsers(ctx context.Context, query dto.PaginationQuery) ([]dto.AdminUserResponse, int64, error)
+	UpdateUserStatus(ctx context.Context, actorID, userID uint, isActive bool) (*dto.AdminUserResponse, error)
 	ListAuditLogs(ctx context.Context, query dto.AuditLogFilterQuery) ([]dto.AuditLogResponse, int64, error)
 }
 
@@ -125,14 +126,45 @@ func (c *adminController) RevenueAnalytics(ctx context.Context, year int) (*dto.
 }
 
 // ListUsers mengambil daftar user untuk panel admin.
-func (c *adminController) ListUsers(ctx context.Context, query dto.PaginationQuery) ([]dto.UserResponse, int64, error) {
+func (c *adminController) ListUsers(ctx context.Context, query dto.PaginationQuery) ([]dto.AdminUserResponse, int64, error) {
 	query = query.Normalize()
 
 	users, total, err := c.uow.User().FindAll(ctx, repository.ListParams{Page: query.Page, Limit: query.Limit})
 	if err != nil {
 		return nil, 0, err
 	}
-	return dto.NewUserResponses(users), total, nil
+	return dto.NewAdminUserResponses(users), total, nil
+}
+
+func (c *adminController) UpdateUserStatus(ctx context.Context, actorID, userID uint, isActive bool) (*dto.AdminUserResponse, error) {
+	if actorID == userID && !isActive {
+		return nil, apperror.Conflict("you cannot deactivate your own account")
+	}
+
+	var result dto.AdminUserResponse
+	err := c.uow.Atomic(ctx, func(r repository.Registry) error {
+		user, err := r.User().FindByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if user.Role == models.RoleAdmin && !isActive {
+			return apperror.Conflict("administrator accounts cannot be deactivated")
+		}
+		if user.IsActive == isActive {
+			result = dto.NewAdminUserResponse(*user)
+			return nil
+		}
+		user.IsActive = isActive
+		if err := r.User().Update(ctx, user); err != nil {
+			return err
+		}
+		result = dto.NewAdminUserResponse(*user)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // ListAuditLogs mengambil aktivitas request terbaru untuk panel admin.

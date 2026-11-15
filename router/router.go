@@ -42,6 +42,7 @@ type Dependencies struct {
 	Notification  *handler.NotificationHandler
 	Rating        *handler.RatingHandler
 	AuditLog      repository.AuditLogRepository
+	UserStatus    repository.UserStatusRepository
 	Readiness     []ReadinessCheck
 	Observability *observability.Observability
 }
@@ -74,7 +75,7 @@ func New(deps Dependencies) *gin.Engine {
 	})
 	engine.GET("/ready", readinessHandler(deps.Readiness))
 
-	authenticated := middleware.Authenticate(deps.JWT)
+	authenticated := middleware.Authenticate(deps.JWT, deps.UserStatus)
 	adminOnly := middleware.RequireRole(models.RoleAdmin)
 
 	v1 := engine.Group("/api/v1")
@@ -151,6 +152,7 @@ func New(deps Dependencies) *gin.Engine {
 		admin.GET("/analytics/revenue", deps.Admin.RevenueAnalytics)
 		admin.GET("/audit-logs", deps.Admin.AuditLogs)
 		admin.GET("/users", deps.User.List)
+		admin.PATCH("/users/:id/status", deps.User.UpdateStatus)
 
 		admin.GET("/fields", deps.Field.List)
 		admin.POST("/fields", deps.Field.Create)

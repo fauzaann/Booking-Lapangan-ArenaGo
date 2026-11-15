@@ -98,6 +98,11 @@ export const api = {
   syncPayment: (id) => request(`/bookings/${id}/sync-payment`, { method: "POST" }),
   bookings: (params = {}) => request(`/bookings?${new URLSearchParams(params)}`),
   adminDashboard: () => request("/admin/dashboard"),
+  adminUsers: (params = {}) => request(`/admin/users?${new URLSearchParams({ page: "1", limit: "20", ...params })}`),
+  updateAdminUserStatus: (id, isActive) => request(`/admin/users/${encodeURIComponent(id)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_active: isActive }),
+  }),
   adminRevenueAnalytics: (year) => request(`/admin/analytics/revenue?year=${encodeURIComponent(year)}`),
   adminAuditLogs: (params = {}) => request(`/admin/audit-logs?${new URLSearchParams({ page: "1", limit: "25", ...params })}`),
   adminBookings: (params = {}) => request(`/admin/bookings?${new URLSearchParams({ page: "1", limit: "8", ...params })}`),

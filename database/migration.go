@@ -30,6 +30,7 @@ func Migrate(db *gorm.DB) error {
 	}
 
 	statements := []string{
+		`UPDATE users SET is_active = TRUE WHERE is_active IS NULL`,
 		`UPDATE notification_events SET event_id = 'legacy-' || id::text WHERE event_id IS NULL OR event_id = ''`,
 		`UPDATE notification_events AS event
 			SET payload = CASE

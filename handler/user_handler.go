@@ -6,6 +6,7 @@ import (
 	"Booking-Lapangan/controllers"
 	"Booking-Lapangan/dto"
 	"Booking-Lapangan/middleware"
+	"Booking-Lapangan/pkg/apperror"
 	"Booking-Lapangan/pkg/response"
 	"Booking-Lapangan/pkg/validator"
 )
@@ -63,4 +64,28 @@ func (h *UserHandler) List(c *gin.Context) {
 		return
 	}
 	response.Paginated(c, "Users retrieved", users, response.NewMeta(query.Page, query.Limit, total))
+}
+
+// UpdateStatus menangani PATCH /api/v1/admin/users/:id/status.
+func (h *UserHandler) UpdateStatus(c *gin.Context) {
+	var req dto.UpdateUserStatusRequest
+	if !h.bindJSON(c, &req) {
+		return
+	}
+	if req.IsActive == nil {
+		response.Error(c, apperror.BadRequest("is_active is required"))
+		return
+	}
+
+	userID, ok := uintParam(c, "id")
+	if !ok {
+		return
+	}
+	actor := middleware.MustActor(c)
+	user, err := h.admin.UpdateUserStatus(c.Request.Context(), actor.UserID, userID, *req.IsActive)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, "User status updated", user)
 }

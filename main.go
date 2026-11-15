@@ -201,6 +201,7 @@ func main() {
 		Notification:  notifHandler,
 		Rating:        handler.NewRatingHandler(ratingController, validate),
 		AuditLog:      uow.AuditLog(),
+		UserStatus:    repository.NewUserStatusRepository(db),
 		Observability: telemetry,
 		Readiness: []router.ReadinessCheck{
 			{Name: "postgres", Required: true, Check: func(ctx context.Context) error { return sqlDB.PingContext(ctx) }},

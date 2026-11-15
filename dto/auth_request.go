@@ -33,8 +33,18 @@ type UserResponse struct {
 	Email         string    `json:"email"`
 	Phone         string    `json:"phone"`
 	WhatsAppOptIn bool      `json:"whatsapp_opt_in"`
+	IsActive      bool      `json:"is_active"`
 	Role          string    `json:"role"`
 	CreatedAt     time.Time `json:"created_at"`
+}
+
+type AdminUserResponse struct {
+	ID        uint      `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // AuthResponse adalah hasil register/login.
@@ -52,8 +62,20 @@ func NewUserResponse(user models.User) UserResponse {
 		Email:         user.Email,
 		Phone:         user.Phone,
 		WhatsAppOptIn: user.WhatsAppOptIn,
+		IsActive:      user.IsActive,
 		Role:          string(user.Role),
 		CreatedAt:     user.CreatedAt,
+	}
+}
+
+func NewAdminUserResponse(user models.User) AdminUserResponse {
+	return AdminUserResponse{
+		ID:        user.ID,
+		Name:      user.Name,
+		Email:     user.Email,
+		Role:      string(user.Role),
+		IsActive:  user.IsActive,
+		CreatedAt: user.CreatedAt,
 	}
 }
 
@@ -62,6 +84,14 @@ func NewUserResponses(users []models.User) []UserResponse {
 	result := make([]UserResponse, 0, len(users))
 	for _, user := range users {
 		result = append(result, NewUserResponse(user))
+	}
+	return result
+}
+
+func NewAdminUserResponses(users []models.User) []AdminUserResponse {
+	result := make([]AdminUserResponse, 0, len(users))
+	for _, user := range users {
+		result = append(result, NewAdminUserResponse(user))
 	}
 	return result
 }

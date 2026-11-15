@@ -26,6 +26,7 @@ import AdminAuditLog from "./pages/AdminAuditLog";
 import AdminRatings from "./pages/AdminRatings";
 import AdminFields from "./pages/AdminFields";
 import AdminAnnouncements from "./pages/AdminAnnouncements";
+import AdminUsers from "./pages/AdminUsers";
 
 export default function App() {
   return (
@@ -124,6 +125,14 @@ export default function App() {
               element={
                 <RequireAuth role="admin">
                   <AdminAnalytics />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/pengguna"
+              element={
+                <RequireAuth role="admin">
+                  <AdminUsers />
                 </RequireAuth>
               }
             />

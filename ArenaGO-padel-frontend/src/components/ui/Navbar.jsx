@@ -12,6 +12,7 @@ function getNavItems({ isAuthenticated, isAdmin }) {
     items.push({ to: "/riwayat", label: "Riwayat", icon: "receipt_long" });
   }
   if (isAdmin) {
+    items.push({ to: "/admin/pengguna", label: "Pengguna", icon: "group" });
     items.push({ to: "/admin/transaksi", label: "Transaksi", icon: "account_balance_wallet" });
     items.push({ to: "/admin/aktivitas", label: "Aktivitas", icon: "history" });
     items.push({ to: "/admin/pengumuman", label: "Pengumuman", icon: "campaign" });

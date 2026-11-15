@@ -1,5 +1,9 @@
 package dto
 
+type UpdateUserStatusRequest struct {
+	IsActive *bool `json:"is_active"`
+}
+
 // DashboardResponse adalah ringkasan data untuk dashboard admin.
 type DashboardResponse struct {
 	TotalUsers        int64   `json:"total_users"`
