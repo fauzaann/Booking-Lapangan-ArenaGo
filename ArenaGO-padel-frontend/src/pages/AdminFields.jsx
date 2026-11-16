@@ -6,6 +6,7 @@ import Icon from "../components/ui/Icon";
 import Input from "../components/ui/Input";
 import { api } from "../lib/api";
 import { formatIDR } from "../lib/format";
+import courtListingImage from "../assets/court-listing.png";
 import {
   FIELD_DAYS,
   createDefaultSchedules,
@@ -80,18 +81,11 @@ function AdminFieldList() {
           {fields.map((field) => (
             <Card key={field.id} className="flex flex-col gap-4 sm:flex-row">
               <div className="relative h-40 shrink-0 overflow-hidden rounded-md bg-sage/10 sm:w-48">
-                {field.image_url ? (
-                  <img
-                    src={field.image_url}
-                    alt={`Gambar ${field.name}`}
-                    className="h-full w-full object-cover"
-                    onError={(event) => { event.currentTarget.style.display = "none"; }}
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sage">
-                    <Icon name="sports_tennis" size={36} />
-                  </div>
-                )}
+                <img
+                  src={courtListingImage}
+                  alt={`Gambar ${field.name}`}
+                  className="h-full w-full object-cover"
+                />
               </div>
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex flex-wrap items-start justify-between gap-2">
